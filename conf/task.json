@@ -1,0 +1,12 @@
+[
+    {
+        "id"  : "ls",
+        "dir" : "/usr/bin",
+        "cmd" : "./ls"
+    },
+    {
+        "id"  : "SetScanner",
+        "dir" : "/usr/bin",
+        "cmd" : "./SetScanner --set=$1 --assoc=$2"
+    }
+]

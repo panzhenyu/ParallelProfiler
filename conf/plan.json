@@ -1,0 +1,31 @@
+[
+    {
+        "id": "Set2022",
+        "task": {
+            "id": "SetScanner",
+            "param": ["20", "30"],
+            "phase": [1, 100],
+            "rt": true
+        },
+        "sample": {
+            "leader": "INSTRUCTIONS",
+            "period": 10000000,
+            "event": ["CYCLE", "LLC-MISSES", "LLC-ACCESS"]
+        }
+    },
+    {
+        "id": "Set2023",
+        "task": {
+            "id": "SetScanner",
+            "param": ["20", "30"],
+            "phase": [1, 100],
+            "rt": true
+        },
+        "sample": {
+            "leader": "INSTRUCTIONS",
+            "period": 10000000,
+            "type": ["PERF_SAMPLE_IP"],
+            "event": ["CYCLE", "LLC-MISSES", "LLC-ACCESS"]
+        }
+    }
+]

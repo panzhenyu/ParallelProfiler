@@ -1,0 +1,17 @@
+set(SRCS
+    ParallelProfiler.cpp
+    PerfEventWrapper.cpp
+)
+
+# build library
+add_library(ParallelProfiler SHARED ${SRCS})
+target_link_libraries(ParallelProfiler pthread)
+
+# build executable
+add_executable(profiler profiler.cpp)
+
+# add include path
+include_directories(ThirdParty)
+
+# add shared library
+target_link_libraries(profiler ParallelProfiler)
