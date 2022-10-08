@@ -1,0 +1,4 @@
+library requires
+
+boost
+pthread

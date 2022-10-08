@@ -1,41 +1,38 @@
-// analyse task conf
-// parse parameters, build tasks(name, dir, cmd, args, perf_events)
-// profile tasks
-// output and finalize
 #include <ostream>
 #include <algorithm>
 #include <unordered_map>
-#include "Task.hpp"
 #include "Config.hpp"
+#include "Process.hpp"
 
-class ParallelProfiler {
+struct IPerfProfiler {
+    virtual int profile() = 0;
+};
+
+class ParallelProfiler: public IPerfProfiler {
 public:
-    ParallelProfiler(const SystemConfig& syscfg, const TaskConfig& taskcfg, const PlanConfig& plancfg, 
-        std::ostream& output): m_syscfg(syscfg), m_taskcfg(taskcfg), m_plancfg(plancfg), m_output(output) {}
+    enum ProcessStatus { READY, PHASEINIT, RUNNING, DEAD };
+    
+public:
+    ParallelProfiler(std::ostream& output): m_output(output) {}
     ParallelProfiler(const ParallelProfiler&) = delete;
-    ~ParallelProfiler() {
-        for (const auto& proc : m_task) {
-            delete proc;
-        }
-    }
+    ~ParallelProfiler() = default;
 
-    int profile();
-    bool setOutput();
-    bool addCPUSet(int cpu);
-    bool addPlan(const std::string&);
+    virtual int profile() override;
+    void addCPUSet(int cpu) { m_cpuset.push_back(cpu); }
+    void addPlan(const Plan& plan) { m_plan.push_back(plan); }
+
 private:
     // build task for each plan
+    bool authCheck();
+    bool argsCheck();
     bool buildTask();
 
 private:
     // static config
-    const SystemConfig&                 m_syscfg;
-    const TaskConfig&                   m_taskcfg;
-    const PlanConfig&                   m_plancfg;
     std::ostream&                       m_output;
     std::vector<int>                    m_cpuset;
-    std::vector<Plan*>                  m_plan;
+    std::vector<Plan>                   m_plan;
     // running config
-    std::vector<IProcess*>              m_task;
+    std::vector<Process>                m_process;
     std::unordered_map<pid_t, size_t>   m_pidmap;
 };

@@ -4,13 +4,17 @@
         "task": {
             "id": "SetScanner",
             "param": ["20", "30"],
-            "phase": [1, 100],
-            "rt": true
+            "phase": {
+                "enable": true,
+                "interval": [1, 100]
+            },
+            "rt": true,
+            "pincpu": true
         },
-        "sample": {
+        "perf": {
             "leader": "INSTRUCTIONS",
-            "period": 10000000,
-            "event": ["CYCLE", "LLC-MISSES", "LLC-ACCESS"]
+            "period": 1000000,
+            "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
         }
     },
     {
@@ -18,14 +22,34 @@
         "task": {
             "id": "SetScanner",
             "param": ["20", "30"],
-            "phase": [1, 100],
-            "rt": true
+            "phase": {
+                "enable": true,
+                "interval": [1, 100]
+            },
+            "rt": true,
+            "pincpu": true
         },
-        "sample": {
+        "perf": {
             "leader": "INSTRUCTIONS",
-            "period": 10000000,
-            "type": ["PERF_SAMPLE_IP"],
-            "event": ["CYCLE", "LLC-MISSES", "LLC-ACCESS"]
+            "period": 1000000,
+            "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
+        }
+    },
+    {
+        "id": "ls",
+        "task": {
+            "id": "ls",
+            "phase": {
+                "enable": true,
+                "interval": [1, 100]
+            },
+            "rt": true,
+            "pincpu": false
+        },
+        "perf": {
+            "type": "count",
+            "leader": "INSTRUCTIONS",
+            "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
         }
     }
 ]
