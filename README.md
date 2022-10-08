@@ -1,4 +1,0 @@
-library requires
-
-boost
-pthread
