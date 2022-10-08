@@ -4,7 +4,7 @@
 #include "cmdline.hpp"
 
 /**
- * usage: ./profiler --task-conf=conf/task.json --plan-conf=conf/plan.json --plan=Set2024 --plan=Set2036 --cpu=1,2~4 --output=
+ * usage: sudo ./profiler --task-conf=conf/task.json --plan-conf=conf/plan.json --plan=Set2024 --plan=Set2036 --cpu=1,2~4 --output=
  * when cpu is set and number of cpu < the number of plan, abort!
  * when plan is invalid, abort!
  */
