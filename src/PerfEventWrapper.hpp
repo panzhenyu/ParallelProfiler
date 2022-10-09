@@ -42,13 +42,12 @@
 #include <boost/noncopyable.hpp>
 #include <boost/exception/all.hpp>
 
-#include <linux/perf_event.h>
+#include <perfmon/perf_event.h>
 
 //----------------------------------------------------------------------------//
 
-namespace ParallelProfiler {
 namespace Utils {
-namespace PerfEventWrapper {
+namespace Perf {
 
 /**
  * @brief The PerfEventError struct
@@ -504,9 +503,8 @@ private: //-------------------------------------------------------------------//
 
 };
 
-} /* namespace PerfEventWrapper */
+} /* namespace Perf */
 } /* namespace Utils */
-} /* namespace ParallelProfiler */
 
 //---------------------------------------------------------------------------//
 // Inline Definitions                                                        //
@@ -517,9 +515,8 @@ private: //-------------------------------------------------------------------//
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 
-namespace ParallelProfiler {
 namespace Utils {
-namespace PerfEventWrapper {
+namespace Perf {
 
 inline uint64_t
 ChildEvent::GetId() const
@@ -922,6 +919,5 @@ Event::Reset()
 
 //----------------------------------------------------------------------------//
 
-} /* namespace PerfEventWrapper */
+} /* namespace Perf */
 } /* namespace Utils */
-} /* namespace ParallelProfiler */

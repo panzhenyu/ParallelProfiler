@@ -2,62 +2,85 @@
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 #include <sys/sysinfo.h>
+#include <perfmon/pfmlib_perf_event.h>
 #include <boost/algorithm/string.hpp>
 #include "ParallelProfiler.hpp"
 
-static int setupSyncTask(const Plan& plan, int cpu) {
-    // here we are in child process, configure it.
-    cpu_set_t cpu_set;
-    struct sched_param param;
-
-    // set traceme
-    if (-1 == ptrace(PTRACE_TRACEME)) {
-        std::cout << "trace failed for plan[" << plan.getID() << "]." << std::endl;
-        return -errno;
-    }
-
-    // pin cpu
-    if (plan.needPinCPU()) {
-        CPU_ZERO(&cpu_set);
-        CPU_SET(cpu, &cpu_set);
-        if (-1 == sched_setaffinity(0, sizeof(cpu_set_t), &cpu_set)) {
-            std::cout << "pin cpu failed for plan[" << plan.getID() << "]." << std::endl;
-            return -errno;
-        }
-    }
-
-    // set rt process
-    if (plan.isRT()) {
-        param.sched_priority = sched_get_priority_max(SCHED_FIFO);
-        if (-1 == sched_setscheduler(0, SCHED_FIFO, &param)) {
-            std::cout << "set fifo failed for plan[" << plan.getID() << "]." << std::endl;
-            return -errno;
-        }
-    }
-
-    return 0;
-}
-
-int ParallelProfiler::profile() {
-    gid_t gid;
+int
+ParallelProfiler::profile() {
+    bool ok;
     pid_t ret;
-    int status;
+    int status, err = 0;
 
-    if (!authCheck() || !argsCheck() || !buildTask()) {
-        return -1;
+    // check & build task
+    if (!authCheck() || !argsCheck()) {
+        err = -1;
+        goto free;
     }
+
+    if (PFM_SUCCESS != pfm_initialize()) {
+        std::cout << "init libpfm failed" << std::endl;
+        err = -2;
+        goto terminate;
+    }
+
+    for (auto& plan : m_plan) {
+        if (!addRunningConfig(plan)) {
+            err = -3;
+            goto terminate;
+        }
+    }
+
+    /**
+     * When we get here, all process are started normally, we shouldn't use goto anymore.
+     * Use SIGKILL to kill child, then waitpid will handle signal for child normally.
+     */
+
+    // set signal driven io for sync
 
     // do profile here, use wait to sync all child process
-    gid = getgid();
-    while (-1 != (ret=waitpid(-gid, &status, 0))) {
-        // child start success with SIGHLD
+    while (-1 != (ret=waitpid(0, &status, 0))) {
+        /**
+         * Handle signal from child process.
+         * SIGINT: Send SIGKILL for all children, terminate profiler without output.
+         * SIGCHLD: Check status for current child.
+         */
+
+        /**
+         * Handle status for SIGCHLD.
+         * WIFEXITED: Child terminated normally, terminate profiler normally.
+         * WIFSIGNALED: Child terminated by signal, error occurs, terminate profiler without output.
+         * WIFSTOPPED: Child stopped by signal, check signal with WSTOPSIG(status).
+         */
+        /**
+         * Handle concrete signal WSTOPSIG(status).
+         * SIGTRAP: Execve done, child process start successfully, sync phase for all children.
+         * SIGIO: A sample overflow occurred, wait for other children, collect data and send PTRACE_CONT to continue.
+         * OTHER: Deliver this signal to the stopped child.
+         */
+        std::cout << "get pid: " << ret << " signal: " << WSTOPSIG(status) << 
+            " stop by signal?: " << WIFSTOPPED(status) << 
+            " terminated by signal?: " << WIFSIGNALED(status) << 
+            " exit normally?: " << WIFEXITED(status) << std::endl;
         ptrace(PTRACE_CONT, ret, NULL, NULL);
     }
+    // All children have been terminated when we get here.
 
-    return 0;
+    // output perf event record
+
+terminate:
+    pfm_terminate();
+
+free:
+    m_pidmap.clear();
+    std::vector<int>().swap(m_cpuset);
+    std::vector<Plan>().swap(m_plan);
+
+    return err;
 }
 
-bool ParallelProfiler::authCheck() {
+bool
+ParallelProfiler::authCheck() {
     if (0 != geteuid()) {
         std::cout << "error: unprivileged user[" << getuid() << "]." << std::endl;
         return false;
@@ -65,7 +88,8 @@ bool ParallelProfiler::authCheck() {
     return true;
 }
 
-bool ParallelProfiler::argsCheck() {
+bool
+ParallelProfiler::argsCheck() {
     std::vector<int> validCPU;
     int nrNeededCPU, nrCPU = get_nprocs();
 
@@ -100,42 +124,99 @@ bool ParallelProfiler::argsCheck() {
     return true;
 }
 
-// build task for each plan
-bool ParallelProfiler::buildTask() {
-    int cpu;
-    Process proc;
+static int
+setupSyncTask(const Plan& plan) {
+    // here we are in child process, configure it.
+    // set traceme
+    if (-1 == ptrace(PTRACE_TRACEME)) {
+        std::cout << "trace failed for plan[" << plan.getID() << "]." << std::endl;
+        return -errno;
+    }
+    return 0;
+}
+
+// build task for plan
+bool
+ParallelProfiler::addRunningConfig(const Plan& plan) {
+    int cpu = -1;
+    pid_t pid = -1;
+    EventPtr event = nullptr;
+    RunningConfig conf(plan);
+
+    cpu_set_t cpuset;
+    struct sched_param param;
+
     std::string cmd, var;
     std::vector<std::string> args, cmdVector;
 
-    for (int i=0, cpuIdx=0; i<m_plan.size(); ++i) {
-        // get reference of current plan
-        const auto& plan = m_plan[i];
-
-        // prepare cmd arguments for process
-        cmd = plan.getTask().getCmd();
-        args = plan.getParam();
-        if (!cmd.empty()) {
-            for (int j=0; j<args.size(); ++j) {
-                var = std::string(Task::ARG_PREFIX) + std::to_string(j+Task::ARG_INDEX_BEGIN);
-                boost::replace_all(cmd, var, args[j]);
-            }
-            if (!cmd.empty()) {
-                boost::split(cmdVector, cmd, boost::is_any_of(" "), boost::token_compress_on);
-            }
+    // gen cmd args and create process
+    cmd = plan.getTask().getCmd();
+    args = plan.getParam();
+    if (!cmd.empty()) {
+        for (int j=0; j<args.size(); ++j) {
+            var = std::string(Task::ARG_PREFIX) + std::to_string(j+Task::ARG_INDEX_BEGIN);
+            boost::replace_all(cmd, var, args[j]);
         }
-
-        // build setup function & process
-        cpu = plan.needPinCPU() ? cpuIdx++ : -1;
-        auto setup = std::bind(setupSyncTask, plan, cpu);
-        if (proc.start(setup, cmdVector)) {
-            proc.setCPU(cpu);
-            proc.setStatus(ProcessStatus::READY);
-            m_process.emplace_back(proc);
-            m_pidmap[proc.getPid()] = i;
-        } else {
-            std::cout << "start plan[" << plan.getID() << "] failed." << std::endl;
-            return false;
+        if (!cmd.empty()) {
+            boost::split(cmdVector, cmd, boost::is_any_of(" "), boost::token_compress_on);
         }
     }
+    if (-1 == (pid=Process::start(std::bind(setupSyncTask, plan), cmdVector))) {
+        return false;
+    }
+
+    // pin cpu
+    if (plan.needPinCPU()) {
+        if (m_cpuset.empty()) {
+            std::cout << "cpuset isn't enough for plan[" << plan.getID() << "]." << std::endl;
+            goto killchild;
+        }
+        cpu = m_cpuset.back();
+        CPU_ZERO(&cpuset);
+        CPU_SET(cpu, &cpuset);
+        if (1 == sched_setaffinity(0, sizeof(cpu_set_t), &cpuset)) {
+            std::cout << "pin cpu failed for plan[" << plan.getID() << "] with errno[" << errno << "]." << std::endl;
+            goto killchild;
+        }
+        m_cpuset.pop_back();
+    }
+
+    // set rt process
+    if (plan.isRT()) {
+        param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+        if (1 == sched_setscheduler(0, SCHED_FIFO, &param)) {
+            std::cout << "set fifo failed for plan[" << plan.getID() << "] with errno[" << errno << "]." << std::endl;
+            goto killchild;
+        }
+    }
+
+    // register perf event
+
+    // add running config
+    conf.m_pid = pid;
+    conf.m_cpu = cpu;
+    conf.m_event = event;
+    if (!m_pidmap.emplace(pid, conf).second) {
+        std::cout << "emplace running config failed for plan[" << plan.getID() << "]." << std::endl;
+        goto killchild;
+    }
+
     return true;
+
+killchild:
+    kill(pid, SIGKILL);
+    return false;
+}
+
+bool
+ParallelProfiler::collect() {
+    return true;
+}
+
+
+void
+ParallelProfiler::killAll() {
+    for (auto& pair : m_pidmap) {
+        kill(pair.first, SIGKILL);
+    }
 }

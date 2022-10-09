@@ -38,11 +38,10 @@
 
 #include "PerfEventWrapper.hpp"
 
-namespace ParallelProfiler {
-namespace Utils {
-namespace PerfEventWrapper {
-
 //----------------------------------------------------------------------------//
+
+namespace Utils {
+namespace Perf {
 
 ChildEvent::ChildEvent(uint64_t config, uint32_t type)
     : id(0)  // 0 == Undefined
@@ -526,6 +525,5 @@ Event::Reconfigure()
 
 //----------------------------------------------------------------------------//
 
-} /* namespace ParallelProfiler */
+} /* namespace Perf */
 } /* namespace Utils */
-} /* namespace PerfEventWrapper */

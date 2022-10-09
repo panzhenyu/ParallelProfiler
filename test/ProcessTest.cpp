@@ -11,10 +11,11 @@ int setup() {
 }
 
 int main() {
+    pid_t pid;
     Process proc;
     vector<string> args = {"/bin/ls", "-l"};
-    proc.start(&setup, args);
-    waitpid(proc.getPid(), 0, 0);
+    pid = proc.start(&setup, args);
+    waitpid(pid, 0, 0);
     proc.start(setup);
     return 0;
 }
