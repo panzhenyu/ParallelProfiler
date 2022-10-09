@@ -33,18 +33,20 @@ ParallelProfiler::profile() {
 
     /**
      * When we get here, all process are started normally, we shouldn't use goto anymore.
-     * Use SIGKILL to kill child, then waitpid will handle signal for child normally.
+     * Use killAll to kill child, then waitpid will handle signal for child normally.
      */
 
-    // set signal driven io for sync
+    /**
+     * Handle signal for main process.
+     * SIGINT: Send SIGKILL for all children, terminate profiler without output.
+     * SIGIO: Ignore SIGIO, cause this profiler bind SIGIO to children.
+     * SIGCHLD: Do nothing with this signal, whose default behavior is ignore.
+     */
+
+    // Set signal driven IO here for sample plan.
 
     // do profile here, use wait to sync all child process
     while (-1 != (ret=waitpid(0, &status, 0))) {
-        /**
-         * Handle signal from child process.
-         * SIGINT: Send SIGKILL for all children, terminate profiler without output.
-         * SIGCHLD: Check status for current child.
-         */
 
         /**
          * Handle status for SIGCHLD.
