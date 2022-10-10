@@ -1,27 +1,163 @@
+#include <poll.h>
 #include <iostream>
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 #include <sys/sysinfo.h>
-#include <perfmon/pfmlib_perf_event.h>
+#include <sys/signalfd.h>
 #include <boost/algorithm/string.hpp>
+#include <perfmon/pfmlib_perf_event.h>
 #include "ParallelProfiler.hpp"
+
+/**
+ * We are in child process, configure it.
+ */
+static int
+setupSyncTask(const Plan& plan) {
+    const auto& dir = plan.getTask().getDir();
+
+    // chdir
+    if (!dir.empty() && -1 == chdir(dir.c_str())) {
+        std::cout << "chdir failed for plan[" << plan.getID() << "]." << std::endl;
+        return -errno;
+    }
+    
+    // set traceme
+    if (-1 == ptrace(PTRACE_TRACEME)) {
+        std::cout << "trace failed for plan[" << plan.getID() << "]." << std::endl;
+        return -errno;
+    }
+    return 0;
+}
+
+static int
+createSignalFD() {
+    sigset_t mask;
+
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGCHLD);
+    sigaddset(&mask, SIGIO);
+
+    if (-1 != sigprocmask(SIG_BLOCK, &mask, NULL)) {
+        return signalfd(-1, &mask, 0);
+    }
+
+    return -1;
+}
+
+bool
+ParallelProfiler::collect(record_t& record) {
+    record.clear();
+    return true;
+}
+
+void
+ParallelProfiler::killAll() {
+    for (auto& pair : m_pidmap) {
+        switch (pair.second.m_status) {
+            case RunningConfig::RUN:
+            case RunningConfig::STOP:
+                if (-1 != kill(pair.first, SIGKILL)) {
+                    pair.second.m_status = RunningConfig::DEAD;
+                }
+                break;
+            case RunningConfig::DEAD:
+                break;
+        }
+    }
+}
+
+/**
+ * Do profile here, use waitpid to sync all child process.
+ * 
+ * Handle status for SIGCHLD.
+ * WIFEXITED: Child terminated normally, terminate profiler normally.
+ * WIFSIGNALED: Child terminated by signal, error occurs, terminate profiler without output.
+ * WIFSTOPPED: Child stopped by signal, check signal with WSTOPSIG(status).
+ * 
+ * Handle concrete signal WSTOPSIG(status).
+ * SIGTRAP: Execve done, child process start successfully, sync phase for all children.
+ * SIGIO: A sample overflow occurred, wait for other children, collect data and send PTRACE_CONT to continue.
+ * OTHER: Deliver this signal to the stopped child.
+ * 
+ * All children are exited when waitpid returns -1(see man waitpid).
+ */
+bool
+ParallelProfiler::handleChild(pid_t pid) {
+    pid_t ret;
+    int status;
+
+    while (-1 != (ret=waitpid(0, &status, WNOHANG))) {
+        if (0 == ret) { break; }
+
+        std::cout << "get pid: " << ret << " signal: " << WSTOPSIG(status) << 
+            " stop by signal?: " << WIFSTOPPED(status) << 
+            " terminated by signal?: " << WIFSIGNALED(status) << 
+            " exit normally?: " << WIFEXITED(status) << std::endl;
+
+        if (WIFEXITED(status)) {
+            setStatus(ProfileStatus::DONE);
+        } else if (WIFSIGNALED(status)) {
+            setStatus(ProfileStatus::ABORT);
+        } else {
+            // process signal here
+            ptrace(PTRACE_CONT, ret, NULL, NULL);
+        }
+    }
+    return true;
+}
+
+bool
+ParallelProfiler::handleSignal(int sfd) {
+    struct signalfd_siginfo fdsi;
+
+    if (sizeof(fdsi) != read(sfd, &fdsi, sizeof(fdsi))) {
+        std::cout << "read siginfo failed." << std::endl;
+        return false;
+    }
+
+    switch (fdsi.ssi_signo) {
+        case SIGINT:
+            std::cout << "receive SIGINT, stop profiling" << std::endl;
+            setStatus(ProfileStatus::ABORT);
+            break;
+        case SIGIO:
+            // main process should ignore this signal
+            break;
+        case SIGCHLD:
+            if (!handleChild(fdsi.ssi_pid)) {
+                std::cout << "handle child event failed for pid: " << fdsi.ssi_pid << std::endl;
+                return false;
+            }
+            break;
+        default:
+            std::cout << "Unhandled signal: " << fdsi.ssi_signo << std::endl;
+            break;
+    }
+    return true;
+}
 
 int
 ParallelProfiler::profile() {
     bool ok;
     pid_t ret;
-    int status, err = 0;
+    int status, sfd, err = 0;
+    struct pollfd pfd[1];
+
+    // clean running config
+    killAll();
+    m_pidmap.clear();
 
     // check & build task
     if (!authCheck() || !argsCheck()) {
         err = -1;
-        goto free;
+        goto finalize;
     }
 
     if (PFM_SUCCESS != pfm_initialize()) {
         std::cout << "init libpfm failed" << std::endl;
         err = -2;
-        goto terminate;
+        goto finalize;
     }
 
     for (auto& plan : m_plan) {
@@ -31,50 +167,59 @@ ParallelProfiler::profile() {
         }
     }
 
-    /**
-     * When we get here, all process are started normally, we shouldn't use goto anymore.
-     * Use killAll to kill child, then waitpid will handle signal for child normally.
-     */
-
-    /**
-     * Handle signal for main process.
-     * SIGINT: Send SIGKILL for all children, terminate profiler without output.
-     * SIGIO: Ignore SIGIO, cause this profiler bind SIGIO to children.
-     * SIGCHLD: Do nothing with this signal, whose default behavior is ignore.
-     */
-
     // Set signal driven IO here for sample plan.
 
-    // do profile here, use wait to sync all child process
-    while (-1 != (ret=waitpid(0, &status, 0))) {
 
-        /**
-         * Handle status for SIGCHLD.
-         * WIFEXITED: Child terminated normally, terminate profiler normally.
-         * WIFSIGNALED: Child terminated by signal, error occurs, terminate profiler without output.
-         * WIFSTOPPED: Child stopped by signal, check signal with WSTOPSIG(status).
-         */
-        /**
-         * Handle concrete signal WSTOPSIG(status).
-         * SIGTRAP: Execve done, child process start successfully, sync phase for all children.
-         * SIGIO: A sample overflow occurred, wait for other children, collect data and send PTRACE_CONT to continue.
-         * OTHER: Deliver this signal to the stopped child.
-         */
+    /**
+     * Create signalfd to handle these signal.
+     * SIGINT: Send SIGKILL for all children, terminate profiler without output.
+     * SIGIO: Ignore SIGIO, cause signal driven IO send signal to the group.
+     * SIGCHLD: Do nothing with this signal, whose default behavior is ignore.
+     */
+    if (-1 == (sfd=createSignalFD())) {
+        std::cout << "create signal fd failed." << std::endl;
+        err = -5;
+        goto terminate;
+    }
+
+    /**
+     * Ready to profile, wait for signal.
+     */
+    setStatus(ProfileStatus::READY);
+    while (getStatus() < ProfileStatus::DONE) {
+        pfd[0] = { sfd, POLLIN, 0 };
+
+        if (poll(pfd, sizeof(pfd) / sizeof(*pfd), -1) != -1) {
+            if (pfd[0].revents & POLLIN){
+                if (!handleSignal(sfd)) {
+                    goto terminate;
+                }
+            }
+        } else if (errno != EINTR) {
+            std::cout << "poll failed with errno: " << errno << std::endl;
+            goto terminate;
+        }
+    }
+
+    /**
+     * All children terminated as we get here.
+     * Output perf record if the profile has done.
+     */
+    if (ProfileStatus::DONE == getStatus()) {
+
+    }
+
+terminate:
+    killAll();
+    while (-1 != (ret=waitpid(0, &status, 0))) {
         std::cout << "get pid: " << ret << " signal: " << WSTOPSIG(status) << 
             " stop by signal?: " << WIFSTOPPED(status) << 
             " terminated by signal?: " << WIFSIGNALED(status) << 
             " exit normally?: " << WIFEXITED(status) << std::endl;
-        ptrace(PTRACE_CONT, ret, NULL, NULL);
     }
-    // All children have been terminated when we get here.
-
-    // output perf event record
-
-terminate:
     pfm_terminate();
 
-free:
-    m_pidmap.clear();
+finalize:
     std::vector<int>().swap(m_cpuset);
     std::vector<Plan>().swap(m_plan);
 
@@ -124,17 +269,6 @@ ParallelProfiler::argsCheck() {
     m_cpuset.swap(validCPU);
 
     return true;
-}
-
-static int
-setupSyncTask(const Plan& plan) {
-    // here we are in child process, configure it.
-    // set traceme
-    if (-1 == ptrace(PTRACE_TRACEME)) {
-        std::cout << "trace failed for plan[" << plan.getID() << "]." << std::endl;
-        return -errno;
-    }
-    return 0;
 }
 
 // build task for plan
@@ -208,17 +342,4 @@ ParallelProfiler::addRunningConfig(const Plan& plan) {
 killchild:
     kill(pid, SIGKILL);
     return false;
-}
-
-bool
-ParallelProfiler::collect() {
-    return true;
-}
-
-
-void
-ParallelProfiler::killAll() {
-    for (auto& pair : m_pidmap) {
-        kill(pair.first, SIGKILL);
-    }
 }

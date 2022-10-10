@@ -18,29 +18,48 @@ struct IPerfProfiler {
 
 class ParallelProfiler: public IPerfProfiler {
 public:
-    enum ProfileStatus { READY, PHASEINIT, RUNNING, DONE };
+    using record_t  = std::vector<std::pair<const Plan&, std::vector<uint64_t>>>;
+protected:
+    /**
+     * Profile status
+     * READY: All child processes have created correctly, the profiler should wait SIGTRAP to start all children.
+     * INIT: Some sample plan doesn't match its phase condition, the profiler should wait for thoes child.
+     * PROFILE: The profiler start profiling when all phase conditions are satisfied.
+     * DONE: The profiler stop profiling and output when any child exit normally or meets its phase ending.
+     * ABORT: The profiler just stop profiling when any child abort(terminated by signal), do nothing with output.
+     */
+    enum ProfileStatus { READY, INIT, PROFILE, DONE, ABORT };
 
     struct RunningConfig {
+        enum Status { RUN, STOP, DEAD };
         RunningConfig(const Plan&);
 
-        pid_t       m_pid;
-        int         m_cpu;
-        const Plan& m_plan;
-        EventPtr    m_event;
-        uint64_t    m_phaseno;
+        pid_t           m_pid;
+        int             m_cpu;
+        const Plan&     m_plan;
+        EventPtr        m_event;
+        uint64_t        m_phaseno;
+        Status          m_status;
+        ProfileStatus   m_profStatus;
     };
-    
-    using pidmap_t = std::unordered_map<pid_t, RunningConfig>;
+    using pidmap_t  = std::unordered_map<pid_t, RunningConfig>;
 
 public:
-    ParallelProfiler(std::ostream& output): m_output(output) {}
+    ParallelProfiler(std::ostream& output): m_output(output), m_status(ProfileStatus::DONE) {}
     ParallelProfiler(const ParallelProfiler&) = delete;
     ~ParallelProfiler() = default;
-    virtual int profile() override;
     void addCPUSet(int cpu);
     void addPlan(const Plan& plan);
+    void setStatus(ProfileStatus);
+    ProfileStatus getStatus() const;
+    bool collect(record_t&);
+    void killAll();
+    virtual int profile() override;
 
 private:
+    // handle signal for child
+    bool handleChild(pid_t);
+    bool handleSignal(int);
     // check sudoer
     bool authCheck();
     // check validity for m_cpuset and m_plan
@@ -49,10 +68,6 @@ private:
 protected:
     // add running config for a plan
     bool addRunningConfig(const Plan&);
-    // collect perf data for every plan at each overflow
-    bool collect();
-    // kill all children
-    void killAll();
 
 protected:
     // static config
@@ -61,7 +76,12 @@ protected:
     std::vector<Plan>                   m_plan;
     // running config
     pidmap_t                            m_pidmap;
+    ProfileStatus                       m_status;
 };
+
+ParallelProfiler::RunningConfig::RunningConfig(const Plan& plan)
+    :   m_pid(-1), m_cpu(-1), m_plan(plan), m_event(nullptr), m_phaseno(0), 
+        m_status(Status::RUN), m_profStatus(ProfileStatus::READY) {}
 
 void
 ParallelProfiler::addCPUSet(int cpu) {
@@ -73,5 +93,12 @@ ParallelProfiler::addPlan(const Plan& plan) {
     m_plan.push_back(plan);
 }
 
-ParallelProfiler::RunningConfig::RunningConfig(const Plan& plan)
-    : m_pid(-1), m_cpu(-1), m_plan(plan), m_event(nullptr), m_phaseno(0) {}
+void
+ParallelProfiler::setStatus(ProfileStatus status) {
+    m_status = status;
+}
+
+ParallelProfiler::ProfileStatus
+ParallelProfiler::getStatus() const {
+    return m_status;
+}
