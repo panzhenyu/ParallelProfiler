@@ -3,6 +3,7 @@
 #include <memory>
 #include <ostream>
 #include <algorithm>
+#include <unordered_set>
 #include <unordered_map>
 #include "Config.hpp"
 #include "Process.hpp"
@@ -17,8 +18,6 @@ struct IPerfProfiler {
 };
 
 class ParallelProfiler: public IPerfProfiler {
-public:
-    using record_t  = std::vector<std::pair<const Plan&, std::vector<uint64_t>>>;
 protected:
     /**
      * Profile status
@@ -28,7 +27,7 @@ protected:
      * DONE: The profiler stop profiling and output when any child exit normally or meets its phase ending.
      * ABORT: The profiler just stop profiling when any child abort(terminated by signal), do nothing with output.
      */
-    enum ProfileStatus { READY, INIT, PROFILE, DONE, ABORT };
+    enum ProfileStatus { READY, INIT, PROFILE, DONE, ABORT, NR };
 
     struct RunningConfig {
         enum Status { RUN, STOP, DEAD };
@@ -40,9 +39,10 @@ protected:
         EventPtr        m_event;
         uint64_t        m_phaseno;
         Status          m_status;
-        ProfileStatus   m_profStatus;
+        
     };
     using pidmap_t  = std::unordered_map<pid_t, RunningConfig>;
+    using procset_t = std::unordered_set<pid_t>;
 
 public:
     ParallelProfiler(std::ostream& output): m_output(output), m_status(ProfileStatus::DONE) {}
@@ -52,8 +52,8 @@ public:
     void addPlan(const Plan& plan);
     void setStatus(ProfileStatus);
     ProfileStatus getStatus() const;
-    bool collect(record_t&);
-    void killAll();
+    bool killAll();
+    bool wakeupAll();
     virtual int profile() override;
 
 private:
@@ -71,17 +71,17 @@ protected:
 
 protected:
     // static config
-    std::ostream&                       m_output;
-    std::vector<int>                    m_cpuset;
-    std::vector<Plan>                   m_plan;
+    std::ostream&               m_output;
+    std::vector<int>            m_cpuset;
+    std::vector<Plan>           m_plan;
     // running config
-    pidmap_t                            m_pidmap;
-    ProfileStatus                       m_status;
+    pidmap_t                    m_pidmap;
+    ProfileStatus               m_status;
+    std::array<procset_t, NR>   m_pstatus;
 };
 
 ParallelProfiler::RunningConfig::RunningConfig(const Plan& plan)
-    :   m_pid(-1), m_cpu(-1), m_plan(plan), m_event(nullptr), m_phaseno(0), 
-        m_status(Status::RUN), m_profStatus(ProfileStatus::READY) {}
+    : m_pid(-1), m_cpu(-1), m_plan(plan), m_event(nullptr), m_phaseno(0), m_status(Status::RUN) {}
 
 void
 ParallelProfiler::addCPUSet(int cpu) {

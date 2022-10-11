@@ -59,18 +59,18 @@ public:
     Plan& setPhase(const std::pair<int, int>& phase);
     Plan& serPerfLeader(const std::string leader);
     Plan& setPerfPeriod(uint64_t period);
-    Plan& addPerfMember(const std::string& member);
-    Plan& addPerfMember(const std::vector<std::string>& member);
+    Plan& add2PerfEvents(const std::string& event);
+    Plan& add2PerfEvents(const std::vector<std::string>& events);
     const std::string& getID() const;
     const Task& getTask() const;
     const std::vector<std::string>& getParam() const;
     bool isRT() const;
     bool needPinCPU() const;
-    bool enbalePhase();
+    bool enbalePhase() const;
     std::pair<int, int> getPhase() const;
     const std::string& gerPerfLeader() const;
     uint64_t getPerfPeriod() const;
-    const std::vector<std::string>& getPerfMember() const;
+    const std::vector<std::string>& getPerfEvents() const;
 
 private:
     // plan identifiler
@@ -85,7 +85,7 @@ private:
     std::pair<int, int>         m_phase;
     std::string                 m_leader;
     uint64_t                    m_period;
-    std::vector<std::string>    m_member;
+    std::vector<std::string>    m_events;
 };
 
 /**
@@ -166,7 +166,13 @@ Plan::Plan(): m_enablePhase(false), m_rt(false), m_pincpu(false), m_period(0) {}
 
 inline bool
 Plan::valid() const {
-    return !(m_id.empty() || m_leader.empty() || (m_enablePhase && 0 == m_period));
+    // for plan with phase condition
+    if (m_enablePhase && (m_leader.empty() || 0 == m_period)) { return false; }
+    // for perf event
+    if (!m_events.empty() && m_leader.empty()) { return false; }
+    // for id constraint
+    if (m_id.empty()) { return false; }
+    return true;
 }
 
 inline Plan&
@@ -224,14 +230,14 @@ Plan::setPerfPeriod(uint64_t period) {
 }
 
 inline Plan&
-Plan::addPerfMember(const std::string& member) {
-    m_member.push_back(member);
+Plan::add2PerfEvents(const std::string& event) {
+    m_events.push_back(event);
     return *this;
 }
 
 inline Plan&
-Plan::addPerfMember(const std::vector<std::string>& member) {
-    m_member.insert(m_member.end(), member.begin(), member.end());
+Plan::add2PerfEvents(const std::vector<std::string>& events) {
+    m_events.insert(m_events.end(), events.begin(), events.end());
     return *this;
 }
 
@@ -261,7 +267,7 @@ Plan::needPinCPU() const {
 }
 
 inline bool
-Plan::enbalePhase() {
+Plan::enbalePhase() const {
     return m_enablePhase;
 }
 
@@ -281,6 +287,6 @@ Plan::getPerfPeriod() const {
 }
 
 inline const std::vector<std::string>&
-Plan::getPerfMember() const {
-    return m_member;
+Plan::getPerfEvents() const {
+    return m_events;
 }

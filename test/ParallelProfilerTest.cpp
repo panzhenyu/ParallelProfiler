@@ -7,12 +7,12 @@ int main() {
     ParallelProfiler profiler(cout);
     Plan test, testDaemon;
 
-    test.setID("test").serPerfLeader("leader").setRT(true).setPinCPU(true)
+    test.setID("test").serPerfLeader("leader").setRT(true).setPinCPU(true).setEnablePhase(false)
         .setTask(Task("task", "/bin/ls $1")).setParam({"-l"});
-    testDaemon.setID("testDaemon").serPerfLeader("leader").setRT(true)
+    testDaemon.setID("testDaemon").serPerfLeader("leader").setRT(true).setEnablePhase(false)
         .setTask(Task("daemon", "./TestDaemon"));
     profiler.addCPUSet(1);
     profiler.addPlan(test);
-    // profiler.addPlan(testDaemon);
+    profiler.addPlan(testDaemon);
     cout << profiler.profile() << endl;
 }

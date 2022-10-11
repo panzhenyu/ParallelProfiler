@@ -40,3 +40,19 @@ Process::start(const std::function<int()>& setup, const std::vector<std::string>
     
     return pid;
 }
+
+bool
+Process::setCPUAffinity(pid_t pid, int cpu) {
+    cpu_set_t cpuset;
+
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu, &cpuset);
+    return 0 == sched_setaffinity(pid, sizeof(cpu_set_t), &cpuset);
+}
+
+bool
+Process::setFIFOProc(pid_t pid, int prio) {
+    struct sched_param param;
+    param.sched_priority = prio;
+    return 0 == sched_setscheduler(pid, SCHED_FIFO, &param);
+}
