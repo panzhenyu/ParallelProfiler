@@ -284,7 +284,8 @@ ParallelProfiler::profile() {
 
 terminate:
     killAll();
-    while (-1 != (ret=waitpid(0, &status, 0))) {
+    while (-1 != (ret=waitpid(0, &status, WNOHANG))) {
+        if (0 == ret) { break; }
         std::cout << "get pid: " << ret << " signal: " << WSTOPSIG(status) << 
             " stop by signal?: " << WIFSTOPPED(status) << 
             " terminated by signal?: " << WIFSIGNALED(status) << 
