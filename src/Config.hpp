@@ -57,7 +57,7 @@ public:
     Plan& setPinCPU(bool pincpu);
     Plan& setEnablePhase(bool enablePhase);
     Plan& setPhase(const std::pair<int, int>& phase);
-    Plan& serPerfLeader(const std::string leader);
+    Plan& setPerfLeader(const std::string leader);
     Plan& setPerfPeriod(uint64_t period);
     Plan& add2PerfEvents(const std::string& event);
     Plan& add2PerfEvents(const std::vector<std::string>& events);
@@ -68,7 +68,7 @@ public:
     bool needPinCPU() const;
     bool enbalePhase() const;
     std::pair<int, int> getPhase() const;
-    const std::string& gerPerfLeader() const;
+    const std::string& getPerfLeader() const;
     uint64_t getPerfPeriod() const;
     const std::vector<std::string>& getPerfEvents() const;
 
@@ -218,7 +218,7 @@ Plan::setPhase(const std::pair<int, int>& phase) {
 }
 
 inline Plan&
-Plan::serPerfLeader(const std::string leader) {
+Plan::setPerfLeader(const std::string leader) {
     m_leader = leader;
     return *this;
 }
@@ -277,7 +277,7 @@ Plan::getPhase() const {
 }
 
 inline const std::string&
-Plan::gerPerfLeader() const {
+Plan::getPerfLeader() const {
     return m_leader;
 }
 
