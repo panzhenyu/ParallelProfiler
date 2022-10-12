@@ -66,8 +66,8 @@ private:
     bool argsCheck();
 
 protected:
-    // add running config for a plan
-    bool addRunningConfig(const Plan&);
+    // build running config for a plan
+    bool buildRunningConfig(const Plan&);
 
 protected:
     // static config

@@ -231,38 +231,45 @@ ParallelProfiler::profile() {
         err = -2;
         goto finalize;
     }
+    
+    /**
+     * Create signalfd to handle these signal.
+     * We must ignore SIGCHLD before start process, or SIGCHLD may be handled by default handler.
+     * 
+     * SIGINT: Send SIGKILL for all children, terminate profiler without output.
+     * SIGIO: Ignore SIGIO, cause signal driven IO send signal to the group.
+     * SIGCHLD: Do nothing with this signal, whose default behavior is ignore.
+     * 
+     */
+    if (-1 == (sfd=createSignalFD())) {
+        std::cout << "create signal fd failed." << std::endl;
+        err = -3;
+        goto terminate;
+    }
 
     for (auto& plan : m_plan) {
-        if (!addRunningConfig(plan)) {
-            err = -3;
+        if (!buildRunningConfig(plan)) {
+            err = -4;
             goto terminate;
         }
     }
 
     // Set signal driven IO here for sample plan.
 
-
-    /**
-     * Create signalfd to handle these signal.
-     * SIGINT: Send SIGKILL for all children, terminate profiler without output.
-     * SIGIO: Ignore SIGIO, cause signal driven IO send signal to the group.
-     * SIGCHLD: Do nothing with this signal, whose default behavior is ignore.
-     */
-    if (-1 == (sfd=createSignalFD())) {
-        std::cout << "create signal fd failed." << std::endl;
-        err = -5;
-        goto terminate;
-    }
-
     /**
      * Ready to profile, wait for signal.
      */
     setStatus(ProfileStatus::READY);
     m_pstatus.fill(procset_t());
+
+    std::cout << "start profiling..." << std::endl;
     while (getStatus() < ProfileStatus::DONE) {
         pfd[0] = { sfd, POLLIN, 0 };
 
+        std::cout << "status[" << getStatus() << "], ready to poll" << std::endl;
+
         if (poll(pfd, sizeof(pfd) / sizeof(*pfd), -1) != -1) {
+            std::cout << "poll returns" << std::endl;
             if (pfd[0].revents & POLLIN){
                 if (!handleSignal(sfd)) {
                     setStatus(ProfileStatus::ABORT);
@@ -271,6 +278,8 @@ ParallelProfiler::profile() {
         } else if (errno != EINTR) {
             std::cout << "poll failed with errno: " << errno << std::endl;
             setStatus(ProfileStatus::ABORT);
+        } else {
+            std::cout << "errno is EINTR" << std::endl;
         }
     }
 
@@ -347,7 +356,7 @@ ParallelProfiler::argsCheck() {
 
 // build task for plan
 bool
-ParallelProfiler::addRunningConfig(const Plan& plan) {
+ParallelProfiler::buildRunningConfig(const Plan& plan) {
     int cpu = -1;
     pid_t pid = -1;
     EventPtr event = nullptr;
