@@ -13,6 +13,7 @@
  */
 static int
 setupSyncTask(const Plan& plan) {
+    sigset_t mask;
     const auto& dir = plan.getTask().getDir();
 
     // chdir
@@ -24,6 +25,13 @@ setupSyncTask(const Plan& plan) {
     // set traceme
     if (-1 == ptrace(PTRACE_TRACEME)) {
         std::cout << "trace failed for plan[" << plan.getID() << "]." << std::endl;
+        return -errno;
+    }
+
+    // enable SIGIO
+    sigaddset(&mask, SIGIO);
+    if (-1 == sigprocmask(SIG_UNBLOCK, &mask, NULL)) {
+        std::cout << "enable SIGIO failed for plan[" << plan.getID() << "]." << std::endl;
         return -errno;
     }
     return 0;
@@ -45,32 +53,62 @@ createSignalFD() {
     return -1;
 }
 
+
+bool
+ParallelProfiler::killChild(pid_t pid) {
+    if (!m_pidmap.count(pid)) {
+        return false;
+    }
+
+    RunningConfig& config = m_pidmap.at(pid);
+
+    switch (config.m_status) {
+    case RunningConfig::RUN:
+    case RunningConfig::STOP:
+        if (-1 != kill(pid, SIGKILL)) {
+            config.m_status = RunningConfig::DEAD;
+        } else { return false; }
+        break;
+    case RunningConfig::DEAD:
+        break;
+    }
+    return true;
+}
+
 bool
 ParallelProfiler::killAll() {
     bool ok = true;
     for (auto& pair : m_pidmap) {
-        switch (pair.second.m_status) {
-        case RunningConfig::RUN:
-        case RunningConfig::STOP:
-            if (-1 != kill(pair.first, SIGKILL)) {
-                pair.second.m_status = RunningConfig::DEAD;
-            } else { ok = false; }
-            break;
-        case RunningConfig::DEAD:
-            break;
+        if (!killChild(pair.first)) {
+            ok = false;
         }
     }
     return ok;
 }
 
 bool
+ParallelProfiler::wakeupChild(pid_t pid) {
+    if (!m_pidmap.count(pid)) {
+        return false;
+    }
+
+    RunningConfig& config = m_pidmap.at(pid);
+
+    if (RunningConfig::STOP == config.m_status) {
+        if (-1 == ptrace(PTRACE_CONT, pid, NULL, NULL)) {
+            return false;
+        }
+        config.m_status = RunningConfig::RUN;
+    }
+
+    return true;
+}
+
+bool
 ParallelProfiler::wakeupAll() {
     for (auto& pair : m_pidmap) {
-        if (RunningConfig::STOP == pair.second.m_status) {
-            if (-1 == ptrace(PTRACE_CONT, pair.first, NULL, NULL)) {
-                return false;
-            }
-            pair.second.m_status = RunningConfig::RUN;
+        if (!wakeupChild(pair.first)) {
+            return false;
         }
     }
     return true;
@@ -119,7 +157,7 @@ ParallelProfiler::handleChild(pid_t pid) {
         RunningConfig& config = m_pidmap.at(pid);
         const Plan& plan = config.m_plan;
 
-        std::cout << "get pid: " << pid << " signal: " << WSTOPSIG(status) << 
+        std::cout << "get plan: " << plan.getID() << " signal: " << WSTOPSIG(status) << 
             " stop by signal?: " << WIFSTOPPED(status) << 
             " terminated by signal?: " << WIFSIGNALED(status) << 
             " exit normally?: " << WIFEXITED(status) << std::endl;
@@ -149,7 +187,7 @@ ParallelProfiler::handleChild(pid_t pid) {
             case READY:
                 if (SIGTRAP == signo) {
                     m_pstatus[ProfileStatus::READY].insert(pid);
-                    if (plan.getPerfLeader().empty() || !plan.enbalePhase() || 0 == plan.getPhase().first) {
+                    if (!plan.samplePlan() || !plan.enbalePhase() || 0 == plan.getPhase().first) {
                         m_pstatus[ProfileStatus::INIT].insert(pid);
                     }
                     config.m_status = RunningConfig::STOP;
@@ -161,11 +199,26 @@ ParallelProfiler::handleChild(pid_t pid) {
                     setStatus(ParallelProfiler::INIT);
                     if (m_pidmap.size() == m_pstatus[ProfileStatus::INIT].size()) {
                         setStatus(ProfileStatus::PROFILE);
-                    }
-                    // Set signal driven IO here for sample plan.
-                    if (!wakeupAll()) {
-                        std::cout << "wake up children failed at READY stage." << std::endl;
-                        return false;
+                        // Set signal driven IO here for sample plan.
+                        if (!wakeupAll()) {
+                            std::cout << "wake up children failed at READY stage." << std::endl;
+                            return false;
+                        }
+                    } else {
+                        // wake up those READY children whose phase condition hasn't been satisfied.
+                        for (pid_t readyChild : m_pstatus[ProfileStatus::READY]) {
+                            if (!m_pstatus[ProfileStatus::INIT].count(readyChild)) {
+                                auto& curconfig = m_pidmap.at(readyChild);
+                                if (RunningConfig::STOP == curconfig.m_status) {
+                                    if (!wakeupChild(readyChild)) { return false; }
+                                } else if (RunningConfig::RUN == curconfig.m_status) {
+                                    std::cout << "plan[" << curconfig.m_plan.getID() << 
+                                        "] is running at READY stage." << std::endl;
+                                    setStatus(ProfileStatus::ABORT);
+                                    return true;
+                                }
+                            }
+                        }
                     }
                 }
                 break;
@@ -202,7 +255,7 @@ ParallelProfiler::handleChild(pid_t pid) {
                 if (SIGIO == signo) {
                     // use m_pstatus[PROFILE] to sync all children here
                     m_pstatus[ProfileStatus::PROFILE].insert(pid);
-                    if (++config.m_phaseno >= plan.getPhase().second) {
+                    if (plan.enbalePhase() && ++config.m_phaseno >= plan.getPhase().second) {
                         m_pstatus[ProfileStatus::DONE].insert(pid);
                     }
                     config.m_status = RunningConfig::STOP;
@@ -266,12 +319,18 @@ int
 ParallelProfiler::profile() {
     bool ok;
     pid_t ret;
-    int status, sfd, err = 0;
     struct pollfd pfd[1];
+    std::vector<int> oldcpuset;
+    int status, sfd = 0, err = 0;
 
     // clean running config
     killAll();
     m_pidmap.clear();
+    m_pstatus.fill(procset_t());
+    setStatus(ProfileStatus::READY);
+
+    // save cpuset, cause buildRunningConfig will modify m_cpuset
+    oldcpuset = m_cpuset;
 
     // check & build task
     if (!authCheck() || !argsCheck()) {
@@ -313,9 +372,6 @@ ParallelProfiler::profile() {
     /**
      * Ready to profile, wait for signal.
      */
-    setStatus(ProfileStatus::READY);
-    m_pstatus.fill(procset_t());
-
     std::cout << "start profiling..." << std::endl;
     while (getStatus() < ProfileStatus::DONE) {
         pfd[0] = { sfd, POLLIN, 0 };
@@ -327,38 +383,43 @@ ParallelProfiler::profile() {
             if (pfd[0].revents & POLLIN){
                 if (!handleSignal(sfd)) {
                     setStatus(ProfileStatus::ABORT);
+                    err = -errno;
                 }
             }
         } else if (errno != EINTR) {
             std::cout << "poll failed with errno: " << errno << std::endl;
             setStatus(ProfileStatus::ABORT);
+            err = -errno;
         } else {
             std::cout << "errno is EINTR" << std::endl;
         }
     }
 
     /**
-     * All children terminated as we get here.
+     * Profile done or abort as we get here.
      * Output perf record if the profile has done.
      */
     if (ProfileStatus::DONE == getStatus()) {
 
     }
 
+    err = getStatus();
+
 terminate:
     killAll();
-    while (-1 != (ret=waitpid(0, &status, WNOHANG))) {
-        if (0 == ret) { break; }
+    while (-1 != (ret=waitpid(0, NULL, 0))) {
         std::cout << "get pid: " << ret << " signal: " << WSTOPSIG(status) << 
             " stop by signal?: " << WIFSTOPPED(status) << 
             " terminated by signal?: " << WIFSIGNALED(status) << 
             " exit normally?: " << WIFEXITED(status) << std::endl;
     }
-    pfm_terminate();
 
 finalize:
-    std::vector<int>().swap(m_cpuset);
-    std::vector<Plan>().swap(m_plan);
+    if (sfd > 0) {
+        close(sfd);
+    }
+    pfm_terminate();
+    m_cpuset = oldcpuset;
 
     return err;
 }

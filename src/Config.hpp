@@ -50,6 +50,7 @@ public:
     Plan(const Plan&) = default;
     ~Plan() = default;
     virtual bool valid() const override;
+    bool samplePlan() const;
     Plan& setID(const std::string& id);
     Plan& setTask(const Task& task);
     Plan& setParam(const std::vector<std::string>& param);
@@ -173,6 +174,11 @@ Plan::valid() const {
     // for id constraint
     if (m_id.empty()) { return false; }
     return true;
+}
+
+inline bool
+Plan::samplePlan() const {
+    return enbalePhase() || m_period != 0;
 }
 
 inline Plan&

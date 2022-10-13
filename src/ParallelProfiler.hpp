@@ -18,7 +18,7 @@ struct IPerfProfiler {
 };
 
 class ParallelProfiler: public IPerfProfiler {
-protected:
+public:
     /**
      * Profile status
      * READY: All child processes have created correctly, the profiler should wait SIGTRAP to start all children.
@@ -49,10 +49,13 @@ public:
     ParallelProfiler(const ParallelProfiler&) = delete;
     ~ParallelProfiler() = default;
     void addCPUSet(int cpu);
+    void addCPUSet(const std::vector<int>& cpuset);
     void addPlan(const Plan& plan);
     void setStatus(ProfileStatus);
     ProfileStatus getStatus() const;
+    bool killChild(pid_t);
     bool killAll();
+    bool wakeupChild(pid_t);
     bool wakeupAll();
     virtual int profile() override;
 
@@ -85,12 +88,17 @@ ParallelProfiler::RunningConfig::RunningConfig(const Plan& plan)
 
 void
 ParallelProfiler::addCPUSet(int cpu) {
-    m_cpuset.push_back(cpu);
+    m_cpuset.emplace_back(cpu);
+}
+
+void
+ParallelProfiler::addCPUSet(const std::vector<int>& cpuset) {
+    m_cpuset.insert(m_cpuset.end(), cpuset.begin(), cpuset.end());
 }
 
 void
 ParallelProfiler::addPlan(const Plan& plan) {
-    m_plan.push_back(plan);
+    m_plan.emplace_back(plan);
 }
 
 void
