@@ -17,7 +17,7 @@ int main() {
         .setPerfLeader("leader");
     testPhase.setID("testPhase").setType(Plan::Type::COUNT).setTask(Task("daemon", "./TestDaemon"))
         .setRT(true)
-        .setPerfLeader("leader").setPerfPeriod(1).setEnablePhase(true).setPhase({2, 5});
+        .setPerfLeader("leader").setPerfPeriod(1).setPhase({2, 5});
 
     profiler.addCPUSet(1);
     profiler.addPlan(test);

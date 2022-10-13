@@ -67,7 +67,6 @@ public:
     Plan& setParam(const std::vector<std::string>& param);
     Plan& setRT(bool rt);
     Plan& setPinCPU(bool pincpu);
-    Plan& setEnablePhase(bool enablePhase);
     Plan& setPhase(const std::pair<int, int>& phase);
     Plan& setPerfLeader(const std::string leader);
     Plan& setPerfPeriod(uint64_t period);
@@ -79,7 +78,6 @@ public:
     const std::vector<std::string>& getParam() const;
     bool isRT() const;
     bool needPinCPU() const;
-    bool enbalePhase() const;
     std::pair<int, int> getPhase() const;
     const std::string& getPerfLeader() const;
     uint64_t getPerfPeriod() const;
@@ -95,7 +93,6 @@ private:
     bool                        m_rt;
     bool                        m_pincpu;
     // perf attribute, affect task running
-    bool                        m_enablePhase;
     std::pair<int, int>         m_phase;
     std::string                 m_leader;
     uint64_t                    m_period;
@@ -177,7 +174,7 @@ Task::getCmd() const {
 
 /* plan: inline implementation */
 Plan::Plan(const std::string& id, Type type, const Task& task)
-    : m_id(id), m_type(type), m_task(task), m_rt(false), m_pincpu(false), m_enablePhase(false), m_period(0) {}
+    : m_id(id), m_type(type), m_task(task), m_rt(false), m_pincpu(false), m_period(0), m_phase({0, 0}) {}
 
 inline bool
 Plan::valid() const {
@@ -242,12 +239,6 @@ Plan::setPinCPU(bool pincpu) {
 }
 
 inline Plan&
-Plan::setEnablePhase(bool enablePhase) {
-    m_enablePhase = enablePhase;
-    return *this;
-}
-
-inline Plan&
 Plan::setPhase(const std::pair<int, int>& phase) {
     m_phase = phase;
     return *this;
@@ -305,11 +296,6 @@ Plan::isRT() const {
 inline bool
 Plan::needPinCPU() const {
     return m_pincpu;
-}
-
-inline bool
-Plan::enbalePhase() const {
-    return m_enablePhase;
 }
 
 inline std::pair<int, int>
