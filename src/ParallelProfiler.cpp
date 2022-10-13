@@ -171,7 +171,6 @@ ParallelProfiler::handleChild(pid_t pid) {
 
         if (WIFEXITED(status)) {
             config.m_status = RunningConfig::DEAD;
-            killAll();
             if (ProfileStatus::READY == profStatus) {
                 setStatus(ProfileStatus::ABORT);
                 std::cout << "failed to start plan[" << plan.getID() << "]." << std::endl;
@@ -179,6 +178,9 @@ ParallelProfiler::handleChild(pid_t pid) {
                 setStatus(ProfileStatus::ABORT);
                 std::cout << "plan[" <<  plan.getID() << "] exit at INIT stage." << std::endl;
             } else {
+                /**
+                 * TODO: collect data
+                 */
                 setStatus(ProfileStatus::DONE);
                 std::cout << "plan[" <<  plan.getID() << "] exit normally." << std::endl;
             }
@@ -186,7 +188,6 @@ ParallelProfiler::handleChild(pid_t pid) {
             break;
         } else if (WIFSIGNALED(status)) {
             config.m_status = RunningConfig::DEAD;
-            killAll();
             setStatus(ProfileStatus::ABORT);
             std::cout << "plan[" << plan.getID() << "] abort by signal[" << WIFSIGNALED(status) << "]." << std::endl;
             break;
@@ -279,11 +280,9 @@ ParallelProfiler::handleChild(pid_t pid) {
                 if (m_pidmap.size() == m_pstatus[ProfileStatus::PROFILE].size()) {
                     // sync done
 
-                    if (plan.perfPlan()) {
-                        /**
-                         * TODO: collect data for perf plan
-                         */
-                    }
+                    /**
+                     * TODO: collect data
+                     */
 
                     // prepare for next sync
                     m_pstatus[ProfileStatus::PROFILE].clear();
@@ -382,11 +381,7 @@ ParallelProfiler::profile() {
     std::cout << "start profiling..." << std::endl;
     while (getStatus() < ProfileStatus::DONE) {
         pfd[0] = { sfd, POLLIN, 0 };
-
-        std::cout << "status[" << getStatus() << "], ready to poll" << std::endl;
-
         if (poll(pfd, sizeof(pfd) / sizeof(*pfd), -1) != -1) {
-            std::cout << "poll returns" << std::endl;
             if (pfd[0].revents & POLLIN){
                 if (!handleSignal(sfd)) {
                     setStatus(ProfileStatus::ABORT);
@@ -407,7 +402,9 @@ ParallelProfiler::profile() {
      * Output perf record if the profile has done.
      */
     if (ProfileStatus::DONE == getStatus()) {
-
+        /**
+         * TODO: output result
+         */
     }
 
     err = getStatus();
