@@ -5,24 +5,28 @@ using namespace std;
 
 int main() {
     ParallelProfiler profiler(cout);
-    Plan test, testDaemon, testPhase;
+    Plan test(string(), Plan::Type::DAEMON, Task());
+    Plan testDaemon(test);
+    Plan testPhase(test);
 
-    test.setID("test").setPerfLeader("leader").setRT(true).setPinCPU(true).setEnablePhase(false)
-        .setTask(Task("task", "/bin/ls $1")).setParam({"-l"});
-    testDaemon.setID("testDaemon").setPerfLeader("leader").setRT(true).setEnablePhase(false)
-        .setTask(Task("daemon", "./TestDaemon"));
-    testPhase.setID("testPhase").setPerfLeader("leader").setPerfPeriod(1).setEnablePhase(true).setPhase({2, 5}).setRT(true)
-        .setTask(Task("daemon", "./TestDaemon"));
+    test.setID("test").setType(Plan::Type::DAEMON).setTask(Task("task", "/bin/ls $1"))
+        .setParam({"-l"}).setRT(true).setPinCPU(true)
+        .setPerfLeader("leader");
+    testDaemon.setID("testDaemon").setType(Plan::Type::DAEMON).setTask(Task("daemon", "./TestDaemon"))
+        .setRT(true)
+        .setPerfLeader("leader");
+    testPhase.setID("testPhase").setType(Plan::Type::COUNT).setTask(Task("daemon", "./TestDaemon"))
+        .setRT(true)
+        .setPerfLeader("leader").setPerfPeriod(1).setEnablePhase(true).setPhase({2, 5});
 
     profiler.addCPUSet(1);
     profiler.addPlan(test);
     profiler.addPlan(testDaemon);
-    // profiler.addPlan(testPhase);
+    profiler.addPlan(testPhase);
 
-    while (true) {
-        if (ParallelProfiler::ProfileStatus::DONE != profiler.profile()) {
-            cout << "profile error with status: " << profiler.getStatus() << endl;
-            break;
-        }
+    if (ParallelProfiler::ProfileStatus::DONE != profiler.profile()) {
+        cout << "profile error with status: " << profiler.getStatus() << "." << endl;
+    } else {
+        cout << "profile done successfully." << endl;
     }
 }

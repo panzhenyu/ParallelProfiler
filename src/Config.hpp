@@ -46,12 +46,23 @@ private:
  */
 class Plan: public IValidConf {
 public:
-    Plan();
+    /**
+     * Plan Type
+     * DAEMON: Ignore all perf configuration.
+     * COUNT: Enable m_leader(Required), m_events(Optional), ignore m_period, m_phase.
+     * SAMPLE: Enable m_leader(Required), m_events(Optional), m_period(must > 0), ignore m_phase.
+     * PHASE: Enable m_leader(Required), m_events(Optional), m_period(must > 0), m_phase(start < end).
+     */
+    enum Type { DAEMON, COUNT, SAMPLE_ALL, SAMPLE_PHASE };
+public:
+    Plan(const std::string& id, Type type, const Task& task);
     Plan(const Plan&) = default;
     ~Plan() = default;
     virtual bool valid() const override;
     bool samplePlan() const;
+    bool perfPlan() const;
     Plan& setID(const std::string& id);
+    Plan& setType(Type type);
     Plan& setTask(const Task& task);
     Plan& setParam(const std::vector<std::string>& param);
     Plan& setRT(bool rt);
@@ -63,6 +74,7 @@ public:
     Plan& add2PerfEvents(const std::string& event);
     Plan& add2PerfEvents(const std::vector<std::string>& events);
     const std::string& getID() const;
+    Type getType() const;
     const Task& getTask() const;
     const std::vector<std::string>& getParam() const;
     bool isRT() const;
@@ -74,8 +86,9 @@ public:
     const std::vector<std::string>& getPerfEvents() const;
 
 private:
-    // plan identifiler
+    // plan attribute
     std::string                 m_id;
+    Type                        m_type;
     // task attribute, affect task build
     Task                        m_task;
     std::vector<std::string>    m_param;
@@ -163,27 +176,44 @@ Task::getCmd() const {
 }
 
 /* plan: inline implementation */
-Plan::Plan(): m_enablePhase(false), m_rt(false), m_pincpu(false), m_period(0) {}
+Plan::Plan(const std::string& id, Type type, const Task& task)
+    : m_id(id), m_type(type), m_task(task), m_rt(false), m_pincpu(false), m_enablePhase(false), m_period(0) {}
 
 inline bool
 Plan::valid() const {
-    // for plan with phase condition
-    if (m_enablePhase && (m_leader.empty() || 0 == m_period)) { return false; }
-    // for perf event
-    if (!m_events.empty() && m_leader.empty()) { return false; }
-    // for id constraint
-    if (m_id.empty()) { return false; }
+    // the needed attr is invalid
+    if (m_id.empty() || !m_task.valid()) { return false; }
+
+    // valid args for each type
+    switch (m_type) {
+    case Type::DAEMON: return true;
+    case Type::COUNT: return !m_leader.empty();
+    case Type::SAMPLE_ALL: return !m_leader.empty() && m_period > 0;
+    case Type::SAMPLE_PHASE: return !m_leader.empty() && m_period > 0 && m_phase.first < m_phase.second;
+    }
+
     return true;
 }
 
 inline bool
 Plan::samplePlan() const {
-    return enbalePhase() || m_period != 0;
+    return getType() >= Type::SAMPLE_ALL;
+}
+
+inline bool
+Plan::perfPlan() const {
+    return getType() >= Type::COUNT;
 }
 
 inline Plan&
 Plan::setID(const std::string& id) {
     m_id = id;
+    return *this;
+}
+
+inline Plan&
+Plan::setType(Type type) {
+    m_type = type;
     return *this;
 }
 
@@ -250,6 +280,11 @@ Plan::add2PerfEvents(const std::vector<std::string>& events) {
 inline const std::string&
 Plan::getID() const {
     return m_id;
+}
+
+inline Plan::Type
+Plan::getType() const {
+    return m_type;
 }
 
 inline const Task&
