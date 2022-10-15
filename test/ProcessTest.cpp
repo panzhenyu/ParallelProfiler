@@ -1,8 +1,9 @@
-#include "Process.hpp"
+#include "PosixUtil.hpp"
 #include <vector>
 #include <iostream>
 #include <sys/wait.h>
 
+using Utils::Posix::Process;
 using namespace std;
 
 int setup() {

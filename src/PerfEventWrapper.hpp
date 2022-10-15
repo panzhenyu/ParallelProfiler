@@ -49,6 +49,13 @@
 namespace Utils {
 namespace Perf {
 
+struct PerfEventEncode {
+    uint64_t config;
+    uint32_t type;
+};
+
+bool getPerfEventEncoding(const std::string& event, PerfEventEncode& encode);
+
 /**
  * @brief The PerfEventError struct
  */
@@ -206,19 +213,44 @@ public: //--------------------------------------------------------------------//
     uint64_t GetId() const;
 
     /**
-     * @brief Get the unique kernel identifier.
+     * @brief Get the file descriptor of leader.
      */
     int GetFd() const;
 
     /**
-     * @brief Get the unique kernel identifier.
+     * @brief Get the sample period.
      */
     uint64_t GetSamplePeriod() const;
+
+    /**
+     * @brief Get the sample type.
+     */
+    uint64_t GetSampleType() const;
+
+    /**
+     * @brief Get the read format.
+     */
+    uint64_t GetReadFormat() const;
+
+    /**
+     * @brief Get the state.
+     */
+    State GetState() const;
+
+    /**
+     * @brief Get the num of children.
+     */
+    size_t GetChildNum() const;
 
     /**
      * @brief Set frequency instead of sample period.
      */
     void SetSamplePeriod(uint64_t sample_period);
+
+    /**
+     * @brief Set the sample type.
+     */
+    void SetSampleType(uint64_t sample_type);
 
     /**
      * @brief Set pid to monitor.
@@ -279,6 +311,11 @@ public: //--------------------------------------------------------------------//
      * @brief
      */
     void SetExcludeIdle(bool exclude);
+
+    /**
+     * @brief
+     */
+    void SetReadFormat(uint64_t read_format);
 
     /**
      * @brief Enable sigio so a signal will be generated when event triggers.
@@ -674,6 +711,26 @@ Event::GetSamplePeriod() const
     return attr.sample_period;
 }
 
+inline uint64_t
+Event::GetSampleType() const {
+    return attr.sample_type;
+}
+
+inline uint64_t
+Event::GetReadFormat() const {
+    return attr.read_format;
+}
+
+inline Event::State
+Event::GetState() const {
+    return state;
+}
+
+inline size_t
+Event::GetChildNum() const {
+    return child_events.size();
+}
+
 inline void
 Event::SetSamplePeriod(uint64_t sample_period)
 {
@@ -692,6 +749,11 @@ Event::SetSamplePeriod(uint64_t sample_period)
                                   boost::errinfo_api_function("ioctl"));
         }
     }
+}
+
+inline void
+Event::SetSampleType(uint64_t sample_type) {
+    attr.sample_type = sample_type;
 }
 
 inline void
@@ -729,6 +791,11 @@ inline void
 Event::SetExcludeIdle(bool exclude)
 {
     attr.exclude_idle = exclude;
+}
+
+inline void
+Event::SetReadFormat(uint64_t read_format) {
+    attr.read_format = read_format;
 }
 
 inline void

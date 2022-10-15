@@ -1,7 +1,7 @@
 set(SRCS
     ParallelProfiler.cpp
     PerfEventWrapper.cpp
-    Process.cpp
+    PosixUtil.cpp
 )
 
 # build library

@@ -6,18 +6,36 @@
 #include <unordered_set>
 #include <unordered_map>
 #include "Config.hpp"
-#include "Process.hpp"
 #include "PerfEventWrapper.hpp"
 
-using Utils::Perf::Event;
-using Utils::Perf::ChildEvent;
-using EventPtr = std::shared_ptr<Event>;
+using EventPtr = std::shared_ptr<Utils::Perf::Event>;
 
 struct IPerfProfiler {
     virtual int profile() = 0;
 };
 
-class ParallelProfiler: public IPerfProfiler {
+class PerfProfiler: public IPerfProfiler {
+public:
+    using sample_t  = std::vector<uint64_t>;
+    using record_t  = sample_t;
+
+    /**
+     * @brief Profile a task, not implement yet.
+     */
+    virtual int profile() { return true; }
+
+    /**
+     * @brief Collect sample event.
+     */
+    bool collect(EventPtr event, std::vector<sample_t>& data);
+
+    /**
+     * @brief Collect count event.
+     */
+    bool collect(EventPtr event, record_t& data);
+};
+
+class ParallelProfiler: public PerfProfiler {
 public:
     /**
      * Profile status
@@ -50,6 +68,7 @@ public:
     ~ParallelProfiler() = default;
     void addCPUSet(int cpu);
     void addCPUSet(const std::vector<int>& cpuset);
+    void setCPUSet(const std::vector<int>& cpuset);
     void addPlan(const Plan& plan);
     void setStatus(ProfileStatus);
     ProfileStatus getStatus() const;
@@ -60,24 +79,41 @@ public:
     virtual int profile() override;
 
 private:
-    // handle signal for child
+    /**
+     * @brief Handle signal for child.
+     */
     bool handleChild(pid_t);
+
+    /**
+     * @brief Handle signal for main.
+     */
     bool handleSignal(int);
-    // check sudoer
+
+    /**
+     * @brief Check sudoer rights.
+     */
     bool authCheck();
-    // check validity for m_cpuset and m_plan
+
+    /**
+     * @brief Check validity for m_cpuset and m_plan.
+     */
     bool argsCheck();
 
 protected:
-    // build running config for a plan
+    /**
+     * @brief Build running config for a plan
+     */
     bool buildRunningConfig(const Plan&);
 
 protected:
-    // static config
+    //------------------------------------------------------------------------//
+    // Settings
     std::ostream&               m_output;
     std::vector<int>            m_cpuset;
     std::vector<Plan>           m_plan;
-    // running config
+
+    //------------------------------------------------------------------------//
+    // Running config
     pidmap_t                    m_pidmap;
     ProfileStatus               m_status;
     std::array<procset_t, NR>   m_pstatus;
@@ -86,27 +122,33 @@ protected:
 ParallelProfiler::RunningConfig::RunningConfig(const Plan& plan)
     : m_pid(-1), m_cpu(-1), m_plan(plan), m_event(nullptr), m_phaseno(0), m_status(Status::RUN) {}
 
-void
+inline void
 ParallelProfiler::addCPUSet(int cpu) {
     m_cpuset.emplace_back(cpu);
 }
 
-void
+inline void
 ParallelProfiler::addCPUSet(const std::vector<int>& cpuset) {
     m_cpuset.insert(m_cpuset.end(), cpuset.begin(), cpuset.end());
 }
 
-void
+
+inline void
+ParallelProfiler::setCPUSet(const std::vector<int>& cpuset) {
+    m_cpuset = cpuset;
+}
+
+inline void
 ParallelProfiler::addPlan(const Plan& plan) {
     m_plan.emplace_back(plan);
 }
 
-void
+inline void
 ParallelProfiler::setStatus(ProfileStatus status) {
     m_status = status;
 }
 
-ParallelProfiler::ProfileStatus
+inline ParallelProfiler::ProfileStatus
 ParallelProfiler::getStatus() const {
     return m_status;
 }

@@ -35,13 +35,37 @@
 #include <signal.h>
 #include <errno.h>
 #include <iostream>
-
+#include <perfmon/pfmlib_perf_event.h>
 #include "PerfEventWrapper.hpp"
 
 //----------------------------------------------------------------------------//
 
 namespace Utils {
 namespace Perf {
+
+bool
+getPerfEventEncoding(const std::string& event, PerfEventEncode& encode) {
+    bool ok = false;
+    struct perf_event_attr attr;
+    pfm_perf_encode_arg_t arg;
+
+    if (PFM_SUCCESS != pfm_initialize()) { return false; }
+
+    memset(&attr, 0, sizeof(attr));
+    memset(&arg, 0, sizeof(arg));
+    arg.size = sizeof(arg);
+    arg.attr = &attr;
+
+    if (PFM_SUCCESS != pfm_get_os_event_encoding(event.c_str(), PFM_PLM3, PFM_OS_PERF_EVENT, &arg)) { goto out; }
+
+    encode.config = attr.config;
+    encode.type = attr.type;
+    ok = true;
+
+out:
+    pfm_terminate();
+    return ok;
+}
 
 ChildEvent::ChildEvent(uint64_t config, uint32_t type)
     : id(0)  // 0 == Undefined
@@ -248,8 +272,8 @@ Event::ProcessEvents(ProcessEventCallback event_callback,
 
     // Read as many bytes as possible
     for (size_t available = GetAvailableBytes();
-         available > sizeof(struct perf_event_header);
-         available = GetAvailableBytes())
+        available > sizeof(struct perf_event_header);
+        available = GetAvailableBytes())
     {
 
         // Get the hdr
@@ -266,7 +290,6 @@ Event::ProcessEvents(ProcessEventCallback event_callback,
 
         if (ehdr.type != PERF_RECORD_SAMPLE)
         {
-
             Skip(ehdr.size - sizeof(struct perf_event_header));
 
             switch(ehdr.type)
@@ -355,7 +378,7 @@ Event::Configure()
     // Open all child events
     for (size_t i = 0; i < child_events.size(); i++)
     {
-         child_events[i]->fd = open(child_events[i]->attr, tid, -1, fd, 0);
+        child_events[i]->fd = open(child_events[i]->attr, tid, -1, fd, 0);
     }
 
     if (attr.read_format & PERF_FORMAT_ID)
@@ -473,7 +496,6 @@ Event::Configure()
 
     if (enable_sigio)
     {
-
         // Setup asynchronous notification on the file descriptor
         if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_ASYNC) == -1)
         {

@@ -1,5 +1,12 @@
 #include <errno.h>
-#include "Process.hpp"
+#include <fcntl.h>
+#include "PosixUtil.hpp"
+
+namespace Utils {
+namespace Posix {
+
+//----------------------------------------------------------------------------//
+// Process
 
 pid_t
 Process::start(const std::function<int()>& func) {
@@ -56,3 +63,30 @@ Process::setFIFOProc(pid_t pid, int prio) {
     param.sched_priority = prio;
     return 0 == sched_setscheduler(pid, SCHED_FIFO, &param);
 }
+
+//----------------------------------------------------------------------------//
+// File
+
+bool
+File::setFileOwner(int fd, pid_t owner) {
+    return fcntl(fd, F_SETOWN, owner) != -1;
+}
+
+bool
+setFileSignal(int fd, int signo) {
+    return fcntl(fd, F_SETSIG, signo) != -1;
+}
+
+bool
+File::enableSigalDrivenIO(int fd) {
+    // Setup asynchronous notification on the file descriptor
+    return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_ASYNC) != -1;
+}
+
+bool
+File::disableSigalDrivenIO(int fd) {
+    return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & (~O_ASYNC)) != -1;
+}
+
+} /* namespace Posix */
+} /* namespace Utils */

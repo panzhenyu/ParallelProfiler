@@ -6,10 +6,100 @@
 #include <sys/signalfd.h>
 #include <boost/algorithm/string.hpp>
 #include <perfmon/pfmlib_perf_event.h>
+#include "PosixUtil.hpp"
 #include "ParallelProfiler.hpp"
 
+using Utils::Posix::Process;
+
+//----------------------------------------------------------------------------//
+// PerfProfiler
+
 /**
- * We are in the child process, configure it.
+ * @brief Callback for Event::ProcessEvents to collect samples.
+ * @param[in] e         pointer to an Event object
+ * @param[in] v         used for storing samples, whose type is std::vector<sample_t>*
+ * @param[in] status    type of record, a non-zero value means the type isn't PERF_RECORD_SAMPLE
+ */
+static void collectSample(Utils::Perf::Event* e, void* v, int status) {
+    using sample_t = PerfProfiler::sample_t;
+
+    bool hasID;
+    uint64_t readfmt, nr, i;
+    sample_t sample;
+    std::vector<sample_t>* samples = static_cast<std::vector<sample_t>*>(v);
+
+    if (status) return;
+
+    readfmt = e->GetReadFormat();
+    nr = e->Read<uint64_t>();
+
+    // skip PERF_FORMAT_TOTAL_TIME_ENABLED
+    if (readfmt & PERF_FORMAT_TOTAL_TIME_ENABLED) { e->Read<uint64_t>(); }
+
+    // skip PERF_FORMAT_TOTAL_TIME_RUNNING
+    if (readfmt & PERF_FORMAT_TOTAL_TIME_RUNNING) { e->Read<uint64_t>(); }
+
+    // collect child events
+    hasID = (PERF_FORMAT_ID & readfmt) == 1;
+    for (i=0; i<nr; ++i) {
+        sample.emplace_back(e->Read<uint64_t>());
+        // skip PERF_FORMAT_ID
+        if (hasID) { e->Read<uint64_t>(); }
+    }
+
+    samples->emplace_back(sample);
+}
+
+bool
+PerfProfiler::collect(EventPtr event, std::vector<sample_t>& data) {
+    if (0 == event->GetSamplePeriod()) { return false; }
+    /**
+     * TODO: Now we haven't support other sample type(except PERF_SAMPLE_READ) yet.
+     * If sample type isn't PERF_SAMPLE_READ, we cannot process it.
+     */
+    if (PERF_SAMPLE_READ != event->GetSampleType()) { return false; }
+    if (0 == (PERF_FORMAT_GROUP & event->GetReadFormat())) { return false; }
+    event->ProcessEvents(collectSample, &data);
+    return true;
+}
+
+bool
+PerfProfiler::collect(EventPtr event, record_t& data) {
+    uint64_t readfmt = event->GetReadFormat();
+    bool hasID = readfmt & PERF_FORMAT_ID;
+
+    if (0 != event->GetSamplePeriod()) { return false; }
+    if (0 == (readfmt & PERF_FORMAT_GROUP)) { return false; }
+
+    // Add for nr
+    int skip = 1;
+
+    // Add for time_enabled
+    if (readfmt & PERF_FORMAT_TOTAL_TIME_ENABLED) { skip++; }
+
+    // Add for time_running
+    if (readfmt & PERF_FORMAT_TOTAL_TIME_RUNNING) { skip++; }
+
+    // Size to read
+    size_t size = (skip + (1 + (hasID ? 1 : 0)) * (event->GetChildNum() + 1));
+    uint64_t values[size];
+
+    if (-1 == read(event->GetFd(), &values, size * sizeof(uint64_t)) == -1) { return false; }
+
+    for(size_t i=0, idx; i<=event->GetChildNum(); i++) {
+        idx = hasID ? (i<<1)+skip : i+skip;
+        data.emplace_back(values[idx]);
+    }
+
+    return true;
+}
+
+//----------------------------------------------------------------------------//
+// ParallelProfiler
+
+/**
+ * @brief Setup function for Utils::Posix::Process::start.
+ * We are in the child process, just configure it.
  */
 static int
 setupSyncTask(const Plan& plan) {
@@ -141,7 +231,7 @@ ParallelProfiler::wakeupAll() {
  * PROFILE: Step phaseno and collect data when accept SIGIO, deliver other signal for child.
  * OTHER:   Something goes wrong when do the profile, abort anyway.
  * 
- * Return false when syscall failed, otherwise return true.
+ * @returns false when syscall failed, otherwise return true.
  */
 bool
 ParallelProfiler::handleChild(pid_t pid) {
@@ -381,7 +471,7 @@ ParallelProfiler::profile() {
     std::cout << "start profiling..." << std::endl;
     while (getStatus() < ProfileStatus::DONE) {
         pfd[0] = { sfd, POLLIN, 0 };
-        if (poll(pfd, sizeof(pfd) / sizeof(*pfd), -1) != -1) {
+        if (-1 == poll(pfd, sizeof(pfd) / sizeof(*pfd), -1)) {
             if (pfd[0].revents & POLLIN){
                 if (!handleSignal(sfd)) {
                     setStatus(ProfileStatus::ABORT);
