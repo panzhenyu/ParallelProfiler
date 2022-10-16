@@ -51,7 +51,7 @@ int main() {
     string event = "INSTRUCTIONS";
     PerfEventEncode encode;
     PerfProfiler profiler;
-    PerfProfiler::record_t record;
+    PerfProfiler::sample_t record;
     std::vector<PerfProfiler::sample_t> samples;
 
 
@@ -80,11 +80,11 @@ int main() {
         signal(SIGIO, handler);
 
         /* configure for event */
-        e = new Event(pid, encode.config, encode.type, 0, PERF_SAMPLE_READ);
+        e = new Event(pid, encode.config, encode.type, 10000000, PERF_SAMPLE_READ);
         e->AttachEvent(boost::make_shared<ChildEvent>(0, PERF_TYPE_HARDWARE));
         e->SetPreciseIp();
         e->SetWakeup(0);
-        // e->EnableSigIO();
+        e->EnableSigIO();
         e->Configure();
         e->Start();
 
@@ -104,7 +104,24 @@ int main() {
                 cout << "collect failed" << endl;
                 break;
             }
+
+            // samples.clear();
+            // if (profiler.collect(event, samples)) {
+            //     cout << "size of samples[" << samples.size() << "]." << endl;
+            //     for (auto& sample : samples) {
+            //         for (auto d : sample) {
+            //             cout << d << " ";
+            //         }
+            //         cout << endl;
+            //     }
+            // } else {
+            //     cout << "collect failed" << endl;
+            //     break;
+            // }
+
+            event->Reset();
             // sleep(1);
+            ptrace(PTRACE_CONT, pid, NULL, NULL);
         }
         // while (-1 != (ret=waitpid(-1, &status, 0))) {
         //     std::cout << "get pid: " << ret << " signal: " << WSTOPSIG(status) << 

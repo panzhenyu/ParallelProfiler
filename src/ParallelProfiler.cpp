@@ -9,7 +9,9 @@
 #include "PosixUtil.hpp"
 #include "ParallelProfiler.hpp"
 
+using Utils::Perf::PerfEventError;
 using Utils::Posix::Process;
+using Utils::Posix::File;
 
 //----------------------------------------------------------------------------//
 // PerfProfiler
@@ -24,11 +26,12 @@ static void collectSample(Utils::Perf::Event* e, void* v, int status) {
     using sample_t = PerfProfiler::sample_t;
 
     bool hasID;
-    uint64_t readfmt, nr, i;
     sample_t sample;
+    uint64_t readfmt, nr, i;
     std::vector<sample_t>* samples = static_cast<std::vector<sample_t>*>(v);
 
-    if (status) return;
+    if (status) { return; }
+    if (nullptr == e || nullptr == v) { return; }
 
     readfmt = e->GetReadFormat();
     nr = e->Read<uint64_t>();
@@ -52,40 +55,54 @@ static void collectSample(Utils::Perf::Event* e, void* v, int status) {
 
 bool
 PerfProfiler::collect(EventPtr event, std::vector<sample_t>& data) {
+    // Event is null, collect false.
+    if (nullptr == event) { return false; }
+
+    // Not a sampling event, collect failed.
     if (0 == event->GetSamplePeriod()) { return false; }
+
     /**
      * TODO: Now we haven't support other sample type(except PERF_SAMPLE_READ) yet.
      * If sample type isn't PERF_SAMPLE_READ, we cannot process it.
      */
     if (PERF_SAMPLE_READ != event->GetSampleType()) { return false; }
+
+    // The read format must enable PERF_FORMAT_GROUP.
     if (0 == (PERF_FORMAT_GROUP & event->GetReadFormat())) { return false; }
+
+    // Collect samples.
     event->ProcessEvents(collectSample, &data);
+
     return true;
 }
 
 bool
-PerfProfiler::collect(EventPtr event, record_t& data) {
+PerfProfiler::collect(EventPtr event, sample_t& data) {
+    // Event is null, collect false.
+    if (nullptr == event) { return false; }
+
     uint64_t readfmt = event->GetReadFormat();
     bool hasID = readfmt & PERF_FORMAT_ID;
 
-    if (0 != event->GetSamplePeriod()) { return false; }
+    // The read format must enable PERF_FORMAT_GROUP.
     if (0 == (readfmt & PERF_FORMAT_GROUP)) { return false; }
 
-    // Add for nr
+    // Add for nr.
     int skip = 1;
 
-    // Add for time_enabled
+    // Add for time_enabled.
     if (readfmt & PERF_FORMAT_TOTAL_TIME_ENABLED) { skip++; }
 
-    // Add for time_running
+    // Add for time_running.
     if (readfmt & PERF_FORMAT_TOTAL_TIME_RUNNING) { skip++; }
 
-    // Size to read
+    // Size to read.
     size_t size = (skip + (1 + (hasID ? 1 : 0)) * (event->GetChildNum() + 1));
     uint64_t values[size];
 
     if (-1 == read(event->GetFd(), &values, size * sizeof(uint64_t)) == -1) { return false; }
 
+    // Collect evet count.
     for(size_t i=0, idx; i<=event->GetChildNum(); i++) {
         idx = hasID ? (i<<1)+skip : i+skip;
         data.emplace_back(values[idx]);
@@ -98,32 +115,37 @@ PerfProfiler::collect(EventPtr event, record_t& data) {
 // ParallelProfiler
 
 /**
- * @brief Setup function for Utils::Posix::Process::start.
- * We are in the child process, just configure it.
+ * @brief   Setup function for Utils::Posix::Process::start.
+ *          We are in the child process, just configure it.
+ * 
+ * @param[in] task A Task object contains initialize information for a static task.
+ * 
+ * @returns 0 if setup succeed, otherwise returns -errno. 
  */
 static int
-setupSyncTask(const Plan& plan) {
+setupSyncTask(const Task& task) {
     sigset_t mask;
-    const auto& dir = plan.getTask().getDir();
+    const auto& dir = task.getDir();
 
-    // chdir
+    // Chdir to working root for this child.
     if (!dir.empty() && -1 == chdir(dir.c_str())) {
-        std::cout << "chdir failed for plan[" << plan.getID() << "]." << std::endl;
+        std::cout << "chdir failed for task[" << task.getID() << "]." << std::endl;
         return -errno;
     }
     
-    // set traceme
+    // Set traceme for synchronize.
     if (-1 == ptrace(PTRACE_TRACEME)) {
-        std::cout << "trace failed for plan[" << plan.getID() << "]." << std::endl;
+        std::cout << "trace failed for task[" << task.getID() << "]." << std::endl;
         return -errno;
     }
 
-    // enable SIGIO
+    // Enable SIGIO, cause father may block SIGIO before fork this child.
     sigaddset(&mask, SIGIO);
     if (-1 == sigprocmask(SIG_UNBLOCK, &mask, NULL)) {
-        std::cout << "enable SIGIO failed for plan[" << plan.getID() << "]." << std::endl;
+        std::cout << "enable SIGIO failed for plan[" << task.getID() << "]." << std::endl;
         return -errno;
     }
+
     return 0;
 }
 
@@ -135,7 +157,6 @@ setupSyncTask(const Plan& plan) {
  * SIGINT: Send SIGKILL for all children, terminate profiler without output.
  * SIGIO: Ignore SIGIO, cause signal driven IO send signal to the group.
  * SIGCHLD: Do nothing with this signal, whose default behavior is ignore.
- * 
  */
 static int
 createSignalFD() {
@@ -153,12 +174,9 @@ createSignalFD() {
     return -1;
 }
 
-
 bool
 ParallelProfiler::killChild(pid_t pid) {
-    if (!m_pidmap.count(pid)) {
-        return false;
-    }
+    if (!m_pidmap.count(pid)) { return false; }
 
     RunningConfig& config = m_pidmap.at(pid);
 
@@ -186,9 +204,7 @@ ParallelProfiler::killAll() {
 
 bool
 ParallelProfiler::wakeupChild(pid_t pid) {
-    if (!m_pidmap.count(pid)) {
-        return false;
-    }
+    if (!m_pidmap.count(pid)) { return false; }
 
     RunningConfig& config = m_pidmap.at(pid);
     if (config.m_status != RunningConfig::STOP || -1 == ptrace(PTRACE_CONT, pid, NULL, NULL)) {
@@ -226,7 +242,7 @@ ParallelProfiler::wakeupAll() {
  *          Wakeup all children When they are ready, and step into INIT or PROFILE according to phase conditions.
  * INIT:    Step phaseno when accept SIGIO, deliver other signal for child.
  *          A phase condition is satisfied when child phaseno matches its start point.
- *          If phaseno exceed its start point, we should abort profiling.
+ *          If phaseno exceed its start point, we should abort.
  *          Step into PROFILE when all children meets their phase condition.
  * PROFILE: Step phaseno and collect data when accept SIGIO, deliver other signal for child.
  * OTHER:   Something goes wrong when do the profile, abort anyway.
@@ -235,7 +251,9 @@ ParallelProfiler::wakeupAll() {
  */
 bool
 ParallelProfiler::handleChild(pid_t pid) {
-    int status, signo, profStatus = getStatus();
+    pid_t gid;
+    int fd, status, signo;
+    ProfileStatus profStatus = getStatus();
 
     if (profStatus >= DONE) {
         std::cout << "error profile status[" << profStatus << "] while processing signal for child." << std::endl;
@@ -245,6 +263,8 @@ ParallelProfiler::handleChild(pid_t pid) {
     while (-1 != (pid=waitpid(0, &status, WNOHANG))) {
         if (0 == pid) { break; }
 
+        // This if clause guarantees that every processed pid is in m_pidmap.
+        // So there is no need to check whether pid is valid in following processes, such as pid in m_pstatus.
         if (!m_pidmap.count(pid)) {
             std::cout << "unknown pid[" << pid << "] while processing signal for child." << std::endl;
             setStatus(ProfileStatus::ABORT);
@@ -260,105 +280,179 @@ ParallelProfiler::handleChild(pid_t pid) {
             " exit normally?: " << WIFEXITED(status) << std::endl;
 
         if (WIFEXITED(status)) {
+            // When we in here, there is a child exit normally.
+
+            // Set DEAD status.
             config.m_status = RunningConfig::DEAD;
+
             if (ProfileStatus::READY == profStatus) {
+                // Child exit at READY stage means a process may start failed, abort.
                 setStatus(ProfileStatus::ABORT);
                 std::cout << "failed to start plan[" << plan.getID() << "]." << std::endl;
             } else if (ProfileStatus::INIT == profStatus) {
+                // Child exit at INIT stage means the phase condition may be too large, abort.
                 setStatus(ProfileStatus::ABORT);
                 std::cout << "plan[" <<  plan.getID() << "] exit at INIT stage." << std::endl;
             } else {
-                /**
-                 * TODO: collect data
-                 */
-                setStatus(ProfileStatus::DONE);
+                // Child exit at PROFILE stage.
+                // Try to step into DONE stage.
+                if (!gotoDONE()) {
+                    setStatus(ProfileStatus::ABORT);
+                    std::cout << "goto DONE stage failed at plan[" << plan.getID() << "] exit." << std::endl;
+                    return true;
+                }
+
+                // Succeed to step into DONE stage.
                 std::cout << "plan[" <<  plan.getID() << "] exit normally." << std::endl;
             }
-            // break this clause, or other children will trigger WIFSIGNALED or WIFSTOPPED to change profile status.
-            break;
+
+            // Break this clause.
+            // Otherwise other children will trigger WIFSIGNALED or WIFSTOPPED to change profile status.
+            return true;
         } else if (WIFSIGNALED(status)) {
+            // Child terminated by signal, abort.
+            // Set child status first.
             config.m_status = RunningConfig::DEAD;
+
+            // Set profile status to ABORT.
             setStatus(ProfileStatus::ABORT);
+
             std::cout << "plan[" << plan.getID() << "] abort by signal[" << WIFSIGNALED(status) << "]." << std::endl;
-            break;
+            
+            // There is no need to process other children anymore(profile status may also be modified by other process).
+            // So return immediately.
+            return true;
         } else if (WIFSTOPPED(status)) {
+            // Traced child receive a signal and stopped.
+            // Collect the signal number.
             signo = WSTOPSIG(status);
+
+            // Process signal according to profile status.
             switch (profStatus) {
             case READY:
+                // Each traced child should start with SIGTRAP(triggered by exec).
                 if (SIGTRAP == signo) {
+                    // Update status for child, the child should stop to wait for other children.
+                    config.m_status = RunningConfig::STOP;
+
+                    // Child pid has reached READY stage, add it into m_pstatus.
                     m_pstatus[ProfileStatus::READY].insert(pid);
+
+                    // The child should skip INIT stage either it doesn't have a phase condition,
+                    // or its phase condition has been satisfied.
                     if (plan.getType() != Plan::Type::SAMPLE_PHASE || 0 == plan.getPhase().first) {
                         m_pstatus[ProfileStatus::INIT].insert(pid);
                     }
-                    config.m_status = RunningConfig::STOP;
                 } else {
+                    // Child shouldn't receive other signal at READY stage.
+                    // So we have to abort.
                     setStatus(ProfileStatus::ABORT);
                     return true;
                 }
+
+                // Check whether all children have sent SIGTRAP.
                 if (m_pidmap.size() == m_pstatus[ProfileStatus::READY].size()) {
-                    setStatus(ParallelProfiler::INIT);
+                    // READY done, step into INIT/PROFILE stage.
+
                     if (m_pidmap.size() == m_pstatus[ProfileStatus::INIT].size()) {
-                        setStatus(ProfileStatus::PROFILE);
-                        if (plan.samplePlan()) {
-                            /**
-                             * TODO: Set signal driven IO here for sample plan.
-                             */
-                        }
-                        if (!wakeupAll()) {
-                            std::cout << "wake up children failed at READY stage." << std::endl;
-                            return false;
+                        // If all children pass INIT stage.
+                        // We should prepare and step into PROFILE.
+                        if (!gotoPROFILE()) {
+                            // If failed then return false to report system error.
+                            std::cout << "goto PROFILE failed at plan[" << plan.getID() << "] in READY stage." << std::endl;
+                            setStatus(ProfileStatus::ABORT);
+                            return true;
                         }
                     } else {
-                        // wake up child whose phase condition hasn't been satisfied.
-                        for (pid_t readyChild : m_pstatus[ProfileStatus::READY]) {
-                            if (m_pstatus[ProfileStatus::INIT].count(readyChild)) { continue; }
-                            if (!wakeupChild(readyChild)) { return false; }
+                        // Some children need INIT stage to satisfy their phase condition.
+                        if (!gotoINIT()) {
+                            // If step into INIT stage failed then return false to report system error.
+                            std::cout << "goto INIT failed at plan[" << plan.getID() << "] in READY stage." << std::endl;
+                            setStatus(ProfileStatus::ABORT);
+                            return true;
                         }
                     }
+
+                    // Terminate this handling to handle next stage.
+                    return true;
                 }
+
+                // Process next child.
                 break;
+
             case INIT:
                 // In INIT stage, SIGIO only send to the child who generates an overflow.
+                // Only SAMPLE_PHASE plan can step into this stage.
                 if (plan.getType() != Plan::Type::SAMPLE_PHASE) {
                     std::cout << "plan[" << plan.getID() << "] shouldn't step into INIT stage." << std::endl;
-                    return false;
+                    setStatus(ProfileStatus::ABORT);
+                    return true;
                 }
+
+                // Process signal for this child.
                 if (SIGIO == signo) {
-                    ++config.m_phaseno;
+                    // Receive SIGIO when an overflow occurs.
+
+                    // Update phaseno for child.
+                    if (!updatePhase(pid)) {
+                        setStatus(ProfileStatus::ABORT);
+                        std::cout << "update phase failed for plan[" << plan.getID() << "] at INIT stage." << std::endl;
+                        return true;
+                    }
+
+                    // Check whether phase condition is satisfied.
                     if (config.m_phaseno >= plan.getPhase().first) {
+                        // Child finishs INIT stage, add it into m_pstate.
                         m_pstatus[ProfileStatus::INIT].insert(pid);
+
+                        // Wait for other child.
                         config.m_status = RunningConfig::STOP;
+
+                        // Stop the perf event.
+                        try {
+                            config.m_event->Stop();
+                        } catch (PerfEventError e) {
+                            std::cout << "failed to stop perf event for plan[" << plan.getID() << "]." << std::endl;
+                            return false;
+                        }
                     } else if (-1 == ptrace(PTRACE_CONT, pid, NULL, NULL)) {
+                        // Try to wake up this child for next phase.
+                        // Return false to report system error if wake up failed.
                         return false;
                     }
                 } else {
+                    // Child receive other signal, just deliver it.
                     if (-1 == ptrace(PTRACE_CONT, pid, NULL, (void*)((long)signo))) {
                         std::cout << "failed to deliver signal[" << signo << 
                             "] to plan[" << plan.getID() << "]." << std::endl;
                         return false;
                     }
                 }
+
                 if (m_pidmap.size() == m_pstatus[ProfileStatus::INIT].size()) {
-                    setStatus(ParallelProfiler::PROFILE);
-                    // reset signal driven io: send SIGIO to group
-                    if (!wakeupAll()) {
-                        std::cout << "wake up children failed at INIT stage." << std::endl;
-                        return false;
+                    // INIT done, step into PROFILE stage.
+                    if (!gotoPROFILE()) {
+                        // If failed then return false to report system error.
+                        std::cout << "goto PROFILE failed at plan[" << plan.getID() << "] in INIT stage." << std::endl;
+                        setStatus(ProfileStatus::ABORT);
+                        return true;
                     }
+
+                    // Terminate this handling to handle next stage.
+                    return true;
                 }
+
+                // Process next child.
                 break;
+
             case PROFILE:
                 /**
                  * In PROFILE stage, SIGIO will be send for group, which means all children
                  * will recv SIGIO and deliver it to main process.
                  */
                 if (SIGIO == signo) {
-                    // use m_pstatus[PROFILE] to sync all children here
+                    // Use m_pstatus[PROFILE] to sync all children here.
                     m_pstatus[ProfileStatus::PROFILE].insert(pid);
-                    if (plan.samplePlan()) { ++config.m_phaseno; }
-                    if (Plan::Type::SAMPLE_PHASE == plan.getType() && config.m_phaseno >= plan.getPhase().second) {
-                        m_pstatus[ProfileStatus::DONE].insert(pid);
-                    }
                     config.m_status = RunningConfig::STOP;
                 } else {
                     if (-1 == ptrace(PTRACE_CONT, pid, NULL, (void*)((long)signo))) {
@@ -367,18 +461,27 @@ ParallelProfiler::handleChild(pid_t pid) {
                         return false;
                     }
                 }
+
                 if (m_pidmap.size() == m_pstatus[ProfileStatus::PROFILE].size()) {
-                    // sync done
-
-                    /**
-                     * TODO: collect data
-                     */
-
-                    // prepare for next sync
+                    // Sync done, all children have been stopped by SIGIO, reset m_pstatus to prepare for next sync.
                     m_pstatus[ProfileStatus::PROFILE].clear();
 
+                    // Collect data for perf plan and update phase for sample plan.
+                    collectAll();
+
+                    // Check phase condition.
+                    for (auto& [pid, config] : m_pidmap) {
+                        const Plan& plan = config.m_plan;
+                        if (Plan::Type::SAMPLE_PHASE == plan.getType() && config.m_phaseno >= plan.getPhase().second) {
+                            m_pstatus[ProfileStatus::DONE].insert(pid);
+                        }
+                    }
+
                     if (!m_pstatus[ProfileStatus::DONE].empty()) {
-                        setStatus(ProfileStatus::DONE);
+                        if (!gotoDONE()) {
+                            setStatus(ProfileStatus::ABORT);
+                            std::cout << "goto DONE stage failed at plan[" << plan.getID() << "] exit." << std::endl;
+                        }
                         return true;
                     } else if (!wakeupAll()) {
                         // wake up all children if no child meets phase ending
@@ -386,6 +489,8 @@ ParallelProfiler::handleChild(pid_t pid) {
                         return false;
                     }
                 }
+
+                // Process next child.
                 break;
             }
         }
@@ -428,16 +533,14 @@ ParallelProfiler::profile() {
     std::vector<int> oldcpuset;
     int status, sfd = 0, err = 0;
 
-    // clean running config
-    killAll();
-    m_pidmap.clear();
+    // Reset running config.
     m_pstatus.fill(procset_t());
     setStatus(ProfileStatus::READY);
 
-    // save cpuset, cause buildRunningConfig will modify m_cpuset
+    // Save cpuset, cause buildRunningConfig will modify m_cpuset.
     oldcpuset = m_cpuset;
 
-    // check & build task
+    // Check & Build task.
     if (!authCheck() || !argsCheck()) {
         err = -1;
         goto finalize;
@@ -455,9 +558,7 @@ ParallelProfiler::profile() {
         goto terminate;
     }
 
-    /**
-     * Build running config, start all plan.
-     */
+    // Build running config, start all plan.
     for (auto& plan : m_plan) {
         if (!buildRunningConfig(plan)) {
             err = -4;
@@ -471,7 +572,7 @@ ParallelProfiler::profile() {
     std::cout << "start profiling..." << std::endl;
     while (getStatus() < ProfileStatus::DONE) {
         pfd[0] = { sfd, POLLIN, 0 };
-        if (-1 == poll(pfd, sizeof(pfd) / sizeof(*pfd), -1)) {
+        if (-1 != poll(pfd, sizeof(pfd) / sizeof(*pfd), -1)) {
             if (pfd[0].revents & POLLIN){
                 if (!handleSignal(sfd)) {
                     setStatus(ProfileStatus::ABORT);
@@ -509,9 +610,8 @@ terminate:
     }
 
 finalize:
-    if (sfd > 0) {
-        close(sfd);
-    }
+    m_pidmap.clear();
+    if (sfd > 0) { close(sfd); }
     pfm_terminate();
     m_cpuset = oldcpuset;
 
@@ -563,6 +663,218 @@ ParallelProfiler::argsCheck() {
     return true;
 }
 
+bool
+ParallelProfiler::updatePhase(pid_t pid) {
+    std::vector<sample_t> samples;
+
+    if (!m_pidmap.count(pid)) { return false; }
+
+    RunningConfig config = m_pidmap.at(pid);
+    EventPtr event = config.m_event;
+    const Plan& plan = config.m_plan;
+
+    // Non-sample plan can not update phase.
+    if (!plan.samplePlan()) { return false; }
+
+    // Collect samples for this config and step phaseno.
+    if (!collect(event, samples)) {
+        std::cout << "collect failed for plan[" << plan.getID() << "]." << std::endl;
+        return false;
+    }
+
+    // Update phaseno.
+    config.m_phaseno += samples.size();
+
+    return true;
+}
+
+bool
+ParallelProfiler::collectAll() {
+    sample_t sample;
+
+    // We can only collect sample on PROFILE stage.
+    if (ProfileStatus::PROFILE != getStatus()) { return false; }
+
+    // Collect data and update phase.
+    for (auto& [pid, config] : m_pidmap) {
+        EventPtr event = config.m_event;
+        const Plan& plan = config.m_plan;
+        auto& samples = config.m_samples;
+
+        // If plan isn't a perf plan, just skip it.
+        if (!plan.perfPlan()) { continue; }
+
+        // Collect sample.
+        if (!collect(event, sample)) {
+            // Collect failed, return false;
+            std::cout << "collect failed for plan[" << plan.getID() << "]." << std::endl;
+            return false;
+        }
+
+        // Save sample.
+        samples.emplace_back(sample);
+
+        // Update phase for sample plan.
+        if (plan.samplePlan() && !updatePhase(pid)) { return false; }
+
+        // Reset perf counter.
+        try {
+            event->Reset();
+        } catch (PerfEventError e) {
+            std::cout << "failed to reset perf event for plan[" << plan.getID() << "]." << std::endl;
+            return false;
+        }
+    }
+
+    // Collect & update done.
+    return true;
+}
+
+bool
+ParallelProfiler::gotoINIT() {
+    // Some children need INIT stage to satisfy their phase condition.
+    // Step into INIT stage.
+
+    int fd;
+
+    // We can only step into INIT from READY stage.
+    if (ProfileStatus::READY != getStatus()) { return false; }
+
+    // Setup for children need INIT stage.
+    for (pid_t readyChild : m_pstatus[ProfileStatus::READY]) {
+        // Ignore those who skip the INIT stage.
+        if (m_pstatus[ProfileStatus::INIT].count(readyChild)) { continue; }
+
+        auto& config = m_pidmap.at(readyChild);
+        EventPtr event = config.m_event;
+        const Plan& plan = config.m_plan;
+
+        // Get file descriptor of perf event.
+        fd = event->GetFd();
+
+        // Set signal driven IO for sample plan.
+        if (!File::enableSigalDrivenIO(fd)) {
+            // Failed to enable signal driven io, return false to report system error.
+            std::cout << "enable signal driven io failed for plan[" <<
+                plan.getID() << "]." << std::endl;
+            return false;
+        }
+        
+        // Set file owner to child itself, cause INIT stage doesn't need to synchronize all children.
+        if (!File::setFileOwner(fd, readyChild)) {
+            // Failed to set file owner, return false to report system error.
+            std::cout << "set file owner failed for plan[" << plan.getID() << "]." << std::endl;
+            return false;
+        }
+
+        // Reset and Start the perf event.
+        try {
+            event->Reset();
+            event->Start();
+        } catch (PerfEventError e) {
+            std::cout << "failed to reset and start perf event for plan[" << plan.getID() << "]." << std::endl;
+            return false;
+        }
+
+        // Wake up this child.
+        if (!wakeupChild(readyChild)) { return false; }
+    }
+
+    // All preparation done, step into INIT.
+    setStatus(ProfileStatus::INIT);
+
+    return true;
+}
+
+bool
+ParallelProfiler::gotoPROFILE() {
+    int fd;
+    pid_t gid;
+
+    // Only READY and INIT can step into PROFILE.
+    if (ProfileStatus::READY != getStatus() && ProfileStatus::INIT != getStatus()) { return false; }
+
+    // Get process group id.
+    gid = getpgrp();
+
+    // Prepare perf event for every sample plan.
+    for (auto& [pid, config] : m_pidmap) {
+        EventPtr event = config.m_event;
+        const Plan& plan = config.m_plan;
+
+        // Skip non-sample plan.
+        if (!plan.samplePlan()) { continue; }
+
+        // Get perf event fd.
+        fd = event->GetFd();
+
+        // Set signal driven IO.
+        if (!File::enableSigalDrivenIO(fd)) {
+            // Failed to enable signal driven io, return false to report system error.
+            std::cout << "enable signal driven io failed for plan[" << plan.getID() << "]." << std::endl;
+            return false;
+        }
+        
+        // Set file owner to process group, so that all children can be synchronized by one SIGIO.
+        if (!File::setFileOwner(fd, -gid)) {
+            // Failed to set file owner, return false to report system error.
+            std::cout << "set file owner failed for plan[" << plan.getID() << "]." << std::endl;
+            return false;
+        }
+
+        // Reset and Start the perf event.
+        try {
+            event->Reset();
+            event->Start();
+        } catch (PerfEventError e) {
+            std::cout << "failed to reset and start perf event for plan[" << plan.getID() << "]." << std::endl;
+            return false;
+        }
+    }
+
+    // Wake up all children.
+    if (!wakeupAll()) {
+        std::cout << "wake up children failed at READY stage." << std::endl;
+        return false;
+    }
+
+    // All preparation done, step into PROFILE.
+    setStatus(ProfileStatus::PROFILE);
+
+    return true;
+}
+
+bool
+ParallelProfiler::gotoDONE() {
+    sample_t sample;
+
+    // Only PROFILE stage can step into DONE.
+    if (ProfileStatus::PROFILE != getStatus()) { return false; }
+
+    // Collect rest data and update phase for sample plan.
+    if (!collectAll()) { return false; }
+
+    // Stop perf event for perf plan.
+    for (auto& [pid, config] : m_pidmap) {
+        EventPtr event = config.m_event;
+        const Plan& plan = config.m_plan;
+
+        if (plan.perfPlan()) {
+            try {
+                event->Stop();
+            } catch (PerfEventError e) {
+                std::cout << "failed to reset and start perf event for plan[" << plan.getID() << "]." << std::endl;
+                return false;
+            }
+        }
+    }
+    
+    // Collect & stop done, step into DONE.
+    setStatus(ProfileStatus::DONE);
+
+    return true;
+}
+
 // build task for plan
 bool
 ParallelProfiler::buildRunningConfig(const Plan& plan) {
@@ -586,9 +898,9 @@ ParallelProfiler::buildRunningConfig(const Plan& plan) {
             boost::split(cmdVector, cmd, boost::is_any_of(" "), boost::token_compress_on);
         }
     }
-    if (-1 == (pid=Process::start(std::bind(setupSyncTask, plan), cmdVector))) {
-        return false;
-    }
+
+    // Start process.
+    if (-1 == (pid=Process::start(std::bind(setupSyncTask, plan.getTask()), cmdVector))) { return false; }
 
     // pin cpu
     if (plan.needPinCPU()) {
@@ -612,7 +924,13 @@ ParallelProfiler::buildRunningConfig(const Plan& plan) {
 
     // register perf event
     if (plan.perfPlan()) {
-
+        /**
+         * TODO: init perf event here
+         */
+        if (nullptr == event) {
+            std::cout << "register perf event failed  for plan[" << plan.getID() << "]." << std::endl;
+            goto killchild;
+        }
     }
 
     // add running config

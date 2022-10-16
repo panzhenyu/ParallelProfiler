@@ -15,7 +15,7 @@ int main() {
     testDaemon.setID("testDaemon").setType(Plan::Type::DAEMON).setTask(Task("daemon", "./TestDaemon"))
         .setRT(true)
         .setPerfLeader("leader");
-    testPhase.setID("testPhase").setType(Plan::Type::COUNT).setTask(Task("daemon", "./TestDaemon"))
+    testPhase.setID("testPhase").setType(Plan::Type::DAEMON).setTask(Task("daemon", "./TestDaemon"))
         .setRT(true)
         .setPerfLeader("leader").setPerfPeriod(1).setPhase({2, 5});
 
