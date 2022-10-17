@@ -4,11 +4,13 @@
 #include <sys/ptrace.h>
 #include <sys/sysinfo.h>
 #include <sys/signalfd.h>
+#include <boost/make_shared.hpp>
 #include <boost/algorithm/string.hpp>
 #include <perfmon/pfmlib_perf_event.h>
 #include "PosixUtil.hpp"
 #include "ParallelProfiler.hpp"
 
+using Utils::Perf::PerfEventEncode;
 using Utils::Perf::PerfEventError;
 using Utils::Posix::Process;
 using Utils::Posix::File;
@@ -273,6 +275,8 @@ ParallelProfiler::handleChild(pid_t pid) {
 
         RunningConfig& config = m_pidmap.at(pid);
         const Plan& plan = config.m_plan;
+        const TaskAttribute& task = plan.getTaskAttribute();
+        const PerfAttribute& perf = plan.getPerfAttribute();
 
         std::cout << "get plan: " << plan.getID() << " signal: " << WSTOPSIG(status) << 
             " stop by signal?: " << WIFSTOPPED(status) << 
@@ -340,7 +344,7 @@ ParallelProfiler::handleChild(pid_t pid) {
 
                     // The child should skip INIT stage either it doesn't have a phase condition,
                     // or its phase condition has been satisfied.
-                    if (plan.getType() != Plan::Type::SAMPLE_PHASE || 0 == plan.getPhase().first) {
+                    if (plan.getType() != Plan::Type::SAMPLE_PHASE || 0 == task.getPhaseBegin()) {
                         m_pstatus[ProfileStatus::INIT].insert(pid);
                     }
                 } else {
@@ -401,7 +405,7 @@ ParallelProfiler::handleChild(pid_t pid) {
                     }
 
                     // Check whether phase condition is satisfied.
-                    if (config.m_phaseno >= plan.getPhase().first) {
+                    if (config.m_phaseno >= task.getPhaseBegin()) {
                         // Child finishs INIT stage, add it into m_pstate.
                         m_pstatus[ProfileStatus::INIT].insert(pid);
 
@@ -472,7 +476,7 @@ ParallelProfiler::handleChild(pid_t pid) {
                     // Check phase condition.
                     for (auto& [pid, config] : m_pidmap) {
                         const Plan& plan = config.m_plan;
-                        if (Plan::Type::SAMPLE_PHASE == plan.getType() && config.m_phaseno >= plan.getPhase().second) {
+                        if (Plan::Type::SAMPLE_PHASE == plan.getType() && config.m_phaseno >= task.getPhaseEnd()) {
                             m_pstatus[ProfileStatus::DONE].insert(pid);
                         }
                     }
@@ -640,7 +644,7 @@ ParallelProfiler::argsCheck() {
     }
     // count needed cpu
     nrNeededCPU = std::count_if(m_plan.begin(), m_plan.end(), 
-        [] (const Plan& plan) -> bool { return plan.needPinCPU(); }
+        [] (const Plan& plan) -> bool { return plan.getTaskAttribute().needPinCPU(); }
     );
 
     // check cpu
@@ -880,30 +884,34 @@ bool
 ParallelProfiler::buildRunningConfig(const Plan& plan) {
     int cpu = -1;
     pid_t pid = -1;
+    PerfEventEncode encode;
     EventPtr event = nullptr;
     RunningConfig conf(plan);
+
+    const TaskAttribute& task = plan.getTaskAttribute();
+    const PerfAttribute& perf = plan.getPerfAttribute();
 
     std::string cmd, var;
     std::vector<std::string> args, cmdVector;
 
-    // gen cmd args and create process
-    cmd = plan.getTask().getCmd();
-    args = plan.getParam();
+    // Gen cmd args and create process.
+    cmd = task.getTask().getCmd();
+    args = task.getParam();
     if (!cmd.empty()) {
         for (int j=0; j<args.size(); ++j) {
-            var = std::string(Task::ARG_PREFIX) + std::to_string(j+Task::ARG_INDEX_BEGIN);
+            var = std::string(TaskAttribute::ARG_PREFIX) + std::to_string(j+TaskAttribute::ARG_INDEX_BEGIN);
             boost::replace_all(cmd, var, args[j]);
         }
         if (!cmd.empty()) {
             boost::split(cmdVector, cmd, boost::is_any_of(" "), boost::token_compress_on);
         }
     }
-
+    
     // Start process.
-    if (-1 == (pid=Process::start(std::bind(setupSyncTask, plan.getTask()), cmdVector))) { return false; }
+    if (-1 == (pid=Process::start(std::bind(setupSyncTask, task.getTask()), cmdVector))) { return false; }
 
-    // pin cpu
-    if (plan.needPinCPU()) {
+    // Pin cpu for process.
+    if (task.needPinCPU()) {
         if (m_cpuset.empty()) {
             std::cout << "cpuset isn't enough for plan[" << plan.getID() << "]." << std::endl;
             goto killchild;
@@ -916,16 +924,18 @@ ParallelProfiler::buildRunningConfig(const Plan& plan) {
         m_cpuset.pop_back();
     }
 
-    // set rt process
-    if (plan.isRT() && !Process::setFIFOProc(pid, sched_get_priority_max(SCHED_FIFO))) {
+    // Set rt process.
+    if (task.isRT() && !Process::setFIFOProc(pid, sched_get_priority_max(SCHED_FIFO))) {
         std::cout << "set fifo failed for plan[" << plan.getID() << "] with errno[" << errno << "]." << std::endl;
         goto killchild;
     }
 
-    // register perf event
+    // Register perf event.
     if (plan.perfPlan()) {
         /**
-         * TODO: init perf event here
+         * TODO: Init perf event here. Handle sample & count event in same step. 
+         * Note that we should set read format explicit.
+         * Cause the child event may be empty(Event object only set read format when invokes AttachChild).
          */
         if (nullptr == event) {
             std::cout << "register perf event failed  for plan[" << plan.getID() << "]." << std::endl;

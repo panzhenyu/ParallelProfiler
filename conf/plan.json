@@ -6,12 +6,12 @@
             "id": "SetScanner",
             "param": ["20", "30"],
             "rt": true,
-            "pincpu": true
+            "pincpu": true,
+            "phase": [1, 100]
         },
         "perf": {
             "leader": "INSTRUCTIONS",
             "period": 1000,
-            "phase": [1, 100],
             "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
         }
     },
@@ -27,7 +27,6 @@
         "perf": {
             "leader": "INSTRUCTIONS",
             "period": 1000000,
-            "phase": [1, 100],
             "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
         }
     },
@@ -41,7 +40,6 @@
         },
         "perf": {
             "leader": "INSTRUCTIONS",
-            "phase": [1, 100],
             "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
         }
     }

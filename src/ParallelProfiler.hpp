@@ -32,6 +32,12 @@ public:
      * @brief Collect sample/count event by reading event fd.
      */
     bool collect(EventPtr event, sample_t& data);
+
+    /**
+     * @brief Create an event group with group leader(leader) and group member(memberEvents).
+     * @returns nullptr if failed.
+     */
+    EventPtr init(pid_t pid, const PerfAttribute& perf);
 };
 
 class ParallelProfiler: public PerfProfiler {
