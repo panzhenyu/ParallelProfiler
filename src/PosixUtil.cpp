@@ -88,5 +88,7 @@ File::disableSigalDrivenIO(int fd) {
     return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & (~O_ASYNC)) != -1;
 }
 
+//----------------------------------------------------------------------------//
+
 } /* namespace Posix */
 } /* namespace Utils */

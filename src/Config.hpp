@@ -28,10 +28,16 @@ public:
     Task& operator=(Task&&) = default;
     ~Task() = default;
 
+    //------------------------------------------------------------------------//
+    // Setter
+
     Task& setID(const std::string& id);
     Task& setDir(const std::string& dir);
     Task& setCmd(const std::string& cmd);
-    
+
+    //------------------------------------------------------------------------//
+    // Getter
+
     const std::string& getID() const;
     const std::string& getDir() const;
     const std::string& getCmd() const;
@@ -62,12 +68,18 @@ public:
     TaskAttribute& operator=(TaskAttribute&&) = default;
     ~TaskAttribute() = default;
 
+    //------------------------------------------------------------------------//
+    // Setter
+
     TaskAttribute& setTask(const Task& task);
     TaskAttribute& setParam(const std::vector<std::string>& param);
     TaskAttribute& setRT(bool rt);
     TaskAttribute& setPinCPU(bool pincpu);
     TaskAttribute& setPhaseBegin(uint64_t begin);
     TaskAttribute& setPhaseEnd(uint64_t end);
+
+    //------------------------------------------------------------------------//
+    // Getter
 
     const Task& getTask() const;
     const std::vector<std::string>& getParam() const;
@@ -122,11 +134,17 @@ public:
     PerfAttribute& operator=(PerfAttribute&&) = default;
     ~PerfAttribute() = default;
 
+    //------------------------------------------------------------------------//
+    // Setter
+
     PerfAttribute& setLeader(const std::string& leader);
     PerfAttribute& setPeriod(uint64_t period);
     PerfAttribute& setEvents(const std::vector<std::string>& events);
     PerfAttribute& addEvents(const std::string& event);
     PerfAttribute& addEvents(const std::vector<std::string>& events);
+
+    //------------------------------------------------------------------------//
+    // Getter
 
     const std::string& getLeader() const;
     uint64_t getPeriod() const;
@@ -181,10 +199,17 @@ public:
     virtual bool valid() const override;
     bool samplePlan() const;
     bool perfPlan() const;
+
+    //------------------------------------------------------------------------//
+    // Setter
+
     Plan& setID(const std::string& id);
     Plan& setType(Plan::Type type);
     Plan& setTaskAttribute(const TaskAttribute& task);
     Plan& setPerfAttribute(const PerfAttribute& perf);
+
+    //------------------------------------------------------------------------//
+    // Getter
     const std::string& getID() const;
     Plan::Type getType() const;
     const TaskAttribute& getTaskAttribute() const;
@@ -489,3 +514,5 @@ inline const PerfAttribute&
 Plan::getPerfAttribute() const {
     return m_perf;
 }
+
+//----------------------------------------------------------------------------//

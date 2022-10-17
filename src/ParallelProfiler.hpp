@@ -8,7 +8,8 @@
 #include "Config.hpp"
 #include "PerfEventWrapper.hpp"
 
-using EventPtr = std::shared_ptr<Utils::Perf::Event>;
+using Utils::Perf::Event;
+using EventPtr = boost::shared_ptr<Event>;
 
 struct IPerfProfiler {
     virtual int profile() = 0;
@@ -17,6 +18,12 @@ struct IPerfProfiler {
 class PerfProfiler: public IPerfProfiler {
 public:
     using sample_t  = std::vector<uint64_t>;
+
+public:
+    static void collectSample(Utils::Perf::Event* e, void* v, int status);
+
+public:
+    PerfProfiler(std::ostream& log, std::ostream& output);
 
     /**
      * @brief Profile a task, not implement yet.
@@ -35,9 +42,22 @@ public:
 
     /**
      * @brief Create an event group with group leader(leader) and group member(memberEvents).
+     * @param[in] perf Describe a static perf attribute.
      * @returns nullptr if failed.
      */
-    EventPtr init(pid_t pid, const PerfAttribute& perf);
+    EventPtr initEvent(const PerfAttribute& perf);
+
+protected:
+    /**
+     * @brief Ostream object for log.
+     */
+    std::ostream&               m_log;
+
+    /**
+     * @brief Ostream object for output perf data.
+     */
+    std::ostream&               m_output;
+
 };
 
 class ParallelProfiler: public PerfProfiler {
@@ -67,12 +87,36 @@ public:
     using pidmap_t  = std::unordered_map<pid_t, RunningConfig>;
     using procset_t = std::unordered_set<pid_t>;
 
+private:
+    /**
+     * @brief   Setup function for Utils::Posix::Process::start.
+     *          We are in the child process, just configure it.
+     * 
+     * @param[in] task A Task object contains initialize information for a static task.
+     * 
+     * @returns 0 if setup succeed, otherwise returns -errno. 
+     */
+    static int setupSyncTask(const Task& task);
+
+    /**
+     * @brief   Create signalfd to handle these signal.
+     *          We must ignore SIGCHLD before start process, or SIGCHLD may be handled by default handler.
+     *          Note that the blocked signals will be derived by children in this way.
+     * 
+     * SIGINT: Send SIGKILL for all children, terminate profiler without output.
+     * SIGIO: Ignore SIGIO, cause signal driven IO send signal to the group.
+     * SIGCHLD: Do nothing with this signal, whose default behavior is ignore.
+     */
+    static int createSignalFD();
+
 public:
-    ParallelProfiler(std::ostream& output): m_output(output), m_status(ProfileStatus::DONE) {}
+    ParallelProfiler(std::ostream& log, std::ostream& output);
     ParallelProfiler(const ParallelProfiler&) = delete;
     ~ParallelProfiler() = default;
+
     //------------------------------------------------------------------------//
     // Setter
+
     void addCPUSet(int cpu);
     void addCPUSet(const std::vector<int>& cpuset);
     void setCPUSet(const std::vector<int>& cpuset);
@@ -81,10 +125,12 @@ public:
 
     //------------------------------------------------------------------------//
     // Getter
+
     ProfileStatus getStatus() const;
 
     //------------------------------------------------------------------------//
     // Controller
+
     bool killChild(pid_t pid);
     bool killAll();
     bool wakeupChild(pid_t pid);
@@ -148,11 +194,6 @@ protected:
     // Settings
 
     /**
-     * @brief Ostream object for output perf data.
-     */
-    std::ostream&               m_output;
-
-    /**
      * @brief A set of cpuno can be used by child if a plan need to pin cpu.
      */
     std::vector<int>            m_cpuset;
@@ -181,8 +222,19 @@ protected:
     std::array<procset_t, NR>   m_pstatus;
 };
 
+//----------------------------------------------------------------------------//
+// PerfProfiler
+
+PerfProfiler::PerfProfiler(std::ostream& log, std::ostream& output) : m_log(log), m_output(output) {}
+
+//----------------------------------------------------------------------------//
+// ParallelProfiler
+
 ParallelProfiler::RunningConfig::RunningConfig(const Plan& plan)
     : m_pid(-1), m_cpu(-1), m_plan(plan), m_event(nullptr), m_phaseno(0), m_status(Status::RUN) {}
+
+ParallelProfiler::ParallelProfiler(std::ostream& log, std::ostream& output)
+    : PerfProfiler(log, output), m_status(ProfileStatus::ABORT) {}
 
 inline void
 ParallelProfiler::addCPUSet(int cpu) {
@@ -214,3 +266,5 @@ inline ParallelProfiler::ProfileStatus
 ParallelProfiler::getStatus() const {
     return m_status;
 }
+
+//----------------------------------------------------------------------------//

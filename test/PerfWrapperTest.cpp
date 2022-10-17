@@ -50,7 +50,7 @@ int main() {
     Event *e;
     string event = "INSTRUCTIONS";
     PerfEventEncode encode;
-    PerfProfiler profiler;
+    PerfProfiler profiler(cout, cout);
     PerfProfiler::sample_t record;
     std::vector<PerfProfiler::sample_t> samples;
 

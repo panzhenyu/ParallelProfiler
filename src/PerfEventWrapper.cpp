@@ -359,7 +359,6 @@ open(struct perf_event_attr &attr,
 
     if (fd == -1)
     {
-        std::cout << strerror(errno) << std::endl;
         BOOST_THROW_EXCEPTION(PerfEventError() <<
                               boost::errinfo_errno(errno) <<
                               boost::errinfo_api_function("syscall"));

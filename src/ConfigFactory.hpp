@@ -105,3 +105,5 @@ inline Plan
 PlanFactory::generalPlan(const std::string& id, Plan::Type type, const TaskAttribute& task, const PerfAttribute& perf) {
     return Plan(task, perf).setID(id).setType(type);
 }
+
+//----------------------------------------------------------------------------//
