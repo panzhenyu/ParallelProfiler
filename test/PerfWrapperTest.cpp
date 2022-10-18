@@ -83,68 +83,57 @@ int main() {
         e = new Event(pid, encode.config, encode.type, 10000000, PERF_SAMPLE_READ);
         e->AttachEvent(boost::make_shared<ChildEvent>(0, PERF_TYPE_HARDWARE));
         e->SetPreciseIp();
-        e->SetWakeup(0);
+        e->SetWakeup(1);
         e->EnableSigIO();
         e->Configure();
+        e->Reset();
         e->Start();
 
         // assert(Event::CONFIGURED == e->GetState());
-        // assert(true == File::setFileOwner(e->GetFd(), -getpgrp()));
-        // assert(true == File::enableSigalDrivenIO(e->GetFd()));
+        assert(true == File::setFileOwner(e->GetFd(), -getpgrp()));
+        assert(true == File::enableSigalDrivenIO(e->GetFd()));
 
         EventPtr event(e);
         cout << "event started." << endl;
-        while (true) {
-            record.clear();
-            if (profiler.collect(event, record)) {
-                cout << "sizeof record[" << record.size() << "]." << endl;
-                for (auto& d : record) { cout << d << " "; }
-                cout << endl;
-            } else {
-                cout << "collect failed" << endl;
-                break;
-            }
-
-            // samples.clear();
-            // if (profiler.collect(event, samples)) {
-            //     cout << "size of samples[" << samples.size() << "]." << endl;
-            //     for (auto& sample : samples) {
-            //         for (auto d : sample) {
-            //             cout << d << " ";
-            //         }
-            //         cout << endl;
-            //     }
-            // } else {
-            //     cout << "collect failed" << endl;
-            //     break;
-            // }
-
-            event->Reset();
-            // sleep(1);
-            ptrace(PTRACE_CONT, pid, NULL, NULL);
-        }
-        // while (-1 != (ret=waitpid(-1, &status, 0))) {
-        //     std::cout << "get pid: " << ret << " signal: " << WSTOPSIG(status) << 
-        //         " stop by signal?: " << WIFSTOPPED(status) << 
-        //         " terminated by signal?: " << WIFSIGNALED(status) << 
-        //         " exit normally?: " << WIFEXITED(status) << std::endl;
-
-        //     samples.clear();
-        //     if (profiler.collect(event, samples)) {
-        //         cout << "size of samples[" << samples.size() << "]." << endl;
-        //         for (auto& sample : samples) {
-        //             for (auto d : sample) {
-        //                 cout << d << " ";
-        //             }
-        //             cout << endl;
-        //         }
+        // while (true) {
+        //     record.clear();
+        //     if (profiler.collect(event, record)) {
+        //         cout << "sizeof record[" << record.size() << "]." << endl;
+        //         for (auto& d : record) { cout << d << " "; }
+        //         cout << endl;
         //     } else {
         //         cout << "collect failed" << endl;
         //         break;
         //     }
-        //     sleep(1);
+        //     event->Reset();
+        //     // sleep(1);
         //     ptrace(PTRACE_CONT, pid, NULL, NULL);
         // }
+        while (-1 != (ret=waitpid(-1, &status, 0))) {
+            std::cout << "get pid: " << ret << " signal: " << WSTOPSIG(status) << 
+                " stop by signal?: " << WIFSTOPPED(status) << 
+                " terminated by signal?: " << WIFSIGNALED(status) << 
+                " exit normally?: " << WIFEXITED(status) << std::endl;
+
+            samples.clear();
+            if (profiler.collect(event, samples)) {
+                cout << "size of samples[" << samples.size() << "]." << endl;
+                for (auto& sample : samples) {
+                    for (auto d : sample) {
+                        cout << d << " ";
+                    }
+                    cout << endl;
+                }
+            } else {
+                cout << "collect failed" << endl;
+                break;
+            }
+            sleep(1);
+
+            event->Reset();
+            event->Refresh();
+            ptrace(PTRACE_CONT, pid, NULL, NULL);
+        }
         kill(pid, SIGKILL);
     }
 

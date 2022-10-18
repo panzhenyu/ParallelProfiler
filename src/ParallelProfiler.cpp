@@ -992,7 +992,6 @@ ParallelProfiler::buildRunningConfig(const Plan& plan) {
 
         // Default wake up is 1, but we shouldn't use wake up.
         // Otherwise the event will be stopped automatically after each overflow until a Refersh.
-        // TODO: Check wakeup while be enabled by Reset.
         event->SetWakeup(0);
 
         // Note that we should set read format explicit.
