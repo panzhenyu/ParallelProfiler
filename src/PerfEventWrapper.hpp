@@ -648,8 +648,6 @@ ChildEvent::Reset()
 
 //----------------------------------------------------------------------------//
 
-
-
 inline void
 Event::AttachEvent(ChildEventPtr event)
 {

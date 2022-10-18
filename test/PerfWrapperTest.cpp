@@ -1,6 +1,7 @@
 #include <string>
 #include <memory>
 #include <fcntl.h>
+#include <signal.h>
 #include <iostream>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -20,12 +21,6 @@ using namespace Utils::Posix;
 void handler(int signo) {
     if (SIGINT == signo) {
         kill(-getpgrp(), SIGKILL);
-    }
-}
-
-void childHandler(int signo) {
-    if (SIGIO == signo) {
-        kill(getpid(), SIGSTOP);
     }
 }
 
@@ -50,8 +45,7 @@ int main() {
         goto out;
     } else if (0 == child1) {
         // in child1 process
-        // ptrace(PTRACE_TRACEME);
-        signal(SIGIO, childHandler);
+        ptrace(PTRACE_TRACEME);
         cout << "child1 pid[" << getpid() << "] gid[" << getgid() << "]" << endl;
         while (true);
     } else {
@@ -61,16 +55,13 @@ int main() {
             goto out;
         } else if (0 == child2) {
             // in child2 process
-            // ptrace(PTRACE_TRACEME);
-            signal(SIGIO, childHandler);
+            ptrace(PTRACE_TRACEME);
             cout << "child2 pid[" << getpid() << "] gid[" << getgid() << "]" << endl;
             while (true);
         } else {
             cout << "parent pid[" << getpid() << "] gid[" << getgid() << "]" << endl;
             signal(SIGINT, handler);
             signal(SIGIO, handler);
-            
-            c1 = c2 = false;
 
             /* configure for event */
             auto event1 = profiler.initEvent(sampleINS);
@@ -87,30 +78,30 @@ int main() {
             event2->Configure();
 
             assert(true == File::enableSigalDrivenIO(event1->GetFd()));
-            assert(true == File::setFileOwner(event1->GetFd(), child1));
+            assert(true == File::setFileOwner(event1->GetFd(), -getpgrp()));
 
             assert(true == File::enableSigalDrivenIO(event2->GetFd()));
-            assert(true == File::setFileOwner(event2->GetFd(), child2));
+            assert(true == File::setFileOwner(event2->GetFd(), -getpgrp()));
 
             event1->Start();
             event2->Start();
 
-            // assert(true == File::enableSigalDrivenIO(0));
-            // assert(true == File::setFileOwner(0, -getpgrp()));
+            c1 = c2 = false;
 
             cout << "event started." << endl << endl;
-            while (-1 != (ret=waitpid(-1, &status, WUNTRACED))) {
-                std::cout << "get pid: " << ret << " signal: " << WSTOPSIG(status) << 
+            while (-1 != (ret=waitpid(-1, &status, 0))) {
+                std::cout << endl << "get pid: " << ret << " signal: " << WSTOPSIG(status) << 
                     " stop by signal?: " << WIFSTOPPED(status) << 
                     " terminated by signal?: " << WIFSIGNALED(status) << 
                     " exit normally?: " << WIFEXITED(status) << std::endl;
 
-                // sync child1 and child2
-                // if (child1 == ret) { c1 = true; }
-                // if (child2 == ret) { c2 = true; }
-                // if (!c1 || !c2) { continue; }
-
-                // c1 = c2 = false;
+                if (ret == child1) { c1 = true; }
+                if (ret == child2) { c2 = true; }
+                if (!c1 || !c2) { continue; }
+                while (-1 != (ret=waitpid(-1, &status, WNOHANG))) {
+                    if (0 == ret) { break; }
+                }
+                c1 = c2 = false;
 
                 // samples.clear();
                 // if (profiler.collect(event1, samples)) {
@@ -164,13 +155,10 @@ int main() {
                     break;
                 }
 
-                cout << "collect done, sleep" << endl << endl;
-
-                kill(ret, SIGCONT);
-                // kill(child2, SIGCONT);
-                // assert (-1 != ptrace(PTRACE_CONT, child1, NULL, NULL));
-                // assert (-1 != ptrace(PTRACE_CONT, child2, NULL, NULL));
+                assert (-1 != ptrace(PTRACE_CONT, child1, 0, 0));
+                assert (-1 != ptrace(PTRACE_CONT, child2, 0, 0));
             }
+            cout << errno << endl;
         }
     }
 

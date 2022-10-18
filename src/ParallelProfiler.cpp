@@ -553,7 +553,7 @@ ParallelProfiler::handleSignal(int sfd) {
         setStatus(ProfileStatus::ABORT);
         break;
     case SIGIO:
-        // some children may stopped by SIGIO, handle it anyway.
+        break;
     case SIGCHLD:
         return handleChild(fdsi.ssi_pid);
     default:
@@ -645,9 +645,9 @@ ParallelProfiler::profile() {
                 for (size_t i=0; i<sample.size(); ++i) { sum[i] += sample[i]; }
             }
 
-            m_output << "sample for plan[" << plan.getID() << "] with phaseno[" << config.m_phaseno << "]." << std::endl;
-            m_output << samples;
-            m_output << sum << std::endl;
+            // m_output << "sample for plan[" << plan.getID() << "] with phaseno[" << config.m_phaseno << "]." << std::endl;
+            // m_output << samples;
+            m_output << "sum for plan[" << plan.getID() << "]: " << sum << std::endl;
         }
     }
 

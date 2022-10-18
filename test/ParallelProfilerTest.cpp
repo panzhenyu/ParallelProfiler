@@ -9,15 +9,15 @@ int main(int argc, char* argv[]) {
     Task ls = TaskFactory::buildTask("ls", "/bin/ls $1");
     Task daemon = TaskFactory::buildTask("daemon", "./TestDaemon");
 
-    TaskAttribute normalLS = TaskAttributeFactory::generalTaskAttribute(ls, {"-la"}, true, true, 0, 0);
-    TaskAttribute normalDaemon = TaskAttributeFactory::normalTaskAttribute(daemon, {}, true, true);
-    TaskAttribute phaseDaemon1 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 0, 9);
+    TaskAttribute normalLS = TaskAttributeFactory::normalTaskAttribute(ls, {"-la"}, false, false);
+    TaskAttribute normalDaemon = TaskAttributeFactory::normalTaskAttribute(daemon, {}, false, false);
+    TaskAttribute phaseDaemon1 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 3, 9);
     TaskAttribute phaseDaemon2 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 4, 8);
 
     PerfAttribute sampleINS = PerfAttributeFactory::generalPerfAttribute(
-        "PERF_COUNT_HW_INSTRUCTIONS", 100000, {"PERF_COUNT_HW_CPU_CYCLES", "LLC_MISSES"});
+        "PERF_COUNT_HW_INSTRUCTIONS", 10000000, {"PERF_COUNT_HW_CPU_CYCLES", "LLC_MISSES"});
 
-    Plan test = PlanFactory::generalPlan("test", Plan::Type::COUNT, normalLS, sampleINS);
+    Plan test = PlanFactory::generalPlan("test", Plan::Type::SAMPLE_ALL, normalLS, sampleINS);
     Plan testDaemon = PlanFactory::generalPlan("testDaemon", Plan::Type::SAMPLE_ALL, normalDaemon, sampleINS);
     Plan testPhase1 = PlanFactory::generalPlan("testPhase1", Plan::Type::SAMPLE_PHASE, phaseDaemon1, sampleINS);
     Plan testPhase2 = PlanFactory::generalPlan("testPhase2", Plan::Type::SAMPLE_PHASE, phaseDaemon2, sampleINS);
@@ -32,11 +32,11 @@ int main(int argc, char* argv[]) {
     //     .setRT(true)
     //     .setPerfLeader("leader").setPerfPeriod(1).setPhase({2, 5});
 
-    profiler.addCPUSet({3});
+    profiler.addCPUSet({3, 4});
     // profiler.addPlan(test);
     // profiler.addPlan(testDaemon);
     profiler.addPlan(testPhase1);
-    // profiler.addPlan(testPhase2);
+    profiler.addPlan(testPhase2);
 
     if (ParallelProfiler::ProfileStatus::DONE != profiler.profile()) {
         cout << "profile error with status: " << profiler.getStatus() << "." << endl;
