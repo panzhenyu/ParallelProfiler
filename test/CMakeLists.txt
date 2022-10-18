@@ -1,3 +1,7 @@
+# set cxx flags
+set(CMAKE_CXX_FLAGS
+-g
+)
 
 # build executable
 add_executable(ProcessTest ProcessTest.cpp)

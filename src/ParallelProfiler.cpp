@@ -933,7 +933,6 @@ bool
 ParallelProfiler::buildRunningConfig(const Plan& plan) {
     int cpu = -1;
     pid_t pid = -1;
-    PerfEventEncode encode;
     EventPtr event = nullptr;
     RunningConfig conf(plan);
 
