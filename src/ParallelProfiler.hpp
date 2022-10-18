@@ -133,7 +133,7 @@ public:
 
     bool killChild(pid_t pid);
     bool killAll();
-    bool wakeupChild(pid_t pid);
+    bool wakeupChild(pid_t pid, int signo);
     bool wakeupAll();
     virtual int profile() override;
 
