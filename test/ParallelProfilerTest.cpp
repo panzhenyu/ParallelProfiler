@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) {
     TaskAttribute phaseDaemon2 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 3, 20);
 
     PerfAttribute sampleINS = PerfAttributeFactory::generalPerfAttribute(
-        "PERF_COUNT_HW_INSTRUCTIONS", 100000000, {"PERF_COUNT_HW_CPU_CYCLES", "LLC_MISSES"});
+        "PERF_COUNT_HW_INSTRUCTIONS", 10000000, {"PERF_COUNT_HW_CPU_CYCLES", "LLC_MISSES"});
 
     Plan test = PlanFactory::generalPlan("test", Plan::Type::COUNT, normalLS, sampleINS);
     Plan testDaemon = PlanFactory::generalPlan("testDaemon", Plan::Type::SAMPLE_ALL, normalDaemon, sampleINS);
@@ -32,10 +32,10 @@ int main(int argc, char* argv[]) {
     //     .setRT(true)
     //     .setPerfLeader("leader").setPerfPeriod(1).setPhase({2, 5});
 
-    profiler.addCPUSet({3, 4});
+    profiler.addCPUSet({2, 3, 4});
     // profiler.addPlan(test);
     profiler.addPlan(testDaemon);
-    // profiler.addPlan(testPhase1);
+    profiler.addPlan(testPhase1);
     profiler.addPlan(testPhase2);
 
     if (ParallelProfiler::ProfileStatus::DONE != profiler.profile()) {
