@@ -9,15 +9,15 @@ int main(int argc, char* argv[]) {
     Task ls = TaskFactory::buildTask("ls", "/bin/ls $1");
     Task daemon = TaskFactory::buildTask("daemon", "./TestDaemon");
 
-    TaskAttribute normalLS = TaskAttributeFactory::normalTaskAttribute(ls, {"-la"}, false, false);
-    TaskAttribute normalDaemon = TaskAttributeFactory::normalTaskAttribute(daemon, {}, false, false);
+    TaskAttribute normalLS = TaskAttributeFactory::normalTaskAttribute(ls, {"-la"}, true, true);
+    TaskAttribute normalDaemon = TaskAttributeFactory::normalTaskAttribute(daemon, {}, true, true);
     TaskAttribute phaseDaemon1 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 5, 9);
-    TaskAttribute phaseDaemon2 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 3, 10);
+    TaskAttribute phaseDaemon2 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 3, 20);
 
     PerfAttribute sampleINS = PerfAttributeFactory::generalPerfAttribute(
-        "PERF_COUNT_HW_INSTRUCTIONS", 10000000, {"PERF_COUNT_HW_CPU_CYCLES", "LLC_MISSES"});
+        "PERF_COUNT_HW_INSTRUCTIONS", 100000000, {"PERF_COUNT_HW_CPU_CYCLES", "LLC_MISSES"});
 
-    Plan test = PlanFactory::generalPlan("test", Plan::Type::SAMPLE_ALL, normalLS, sampleINS);
+    Plan test = PlanFactory::generalPlan("test", Plan::Type::COUNT, normalLS, sampleINS);
     Plan testDaemon = PlanFactory::generalPlan("testDaemon", Plan::Type::SAMPLE_ALL, normalDaemon, sampleINS);
     Plan testPhase1 = PlanFactory::generalPlan("testPhase1", Plan::Type::SAMPLE_PHASE, phaseDaemon1, sampleINS);
     Plan testPhase2 = PlanFactory::generalPlan("testPhase2", Plan::Type::SAMPLE_PHASE, phaseDaemon2, sampleINS);
@@ -34,8 +34,8 @@ int main(int argc, char* argv[]) {
 
     profiler.addCPUSet({3, 4});
     // profiler.addPlan(test);
-    // profiler.addPlan(testDaemon);
-    profiler.addPlan(testPhase1);
+    profiler.addPlan(testDaemon);
+    // profiler.addPlan(testPhase1);
     profiler.addPlan(testPhase2);
 
     if (ParallelProfiler::ProfileStatus::DONE != profiler.profile()) {
