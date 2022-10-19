@@ -183,10 +183,10 @@ ParallelProfiler::setupSyncTask(const Task& task) {
         return -errno;
     }
 
-    // Enable SIGIO, cause father may block SIGIO before fork this child.
-    sigaddset(&mask, SIGIO);
+    // Enable OVERFLOW_SIG, cause father may block signal before fork this child.
+    sigaddset(&mask, ParallelProfiler::OVERFLOW_SIG);
     if (-1 == sigprocmask(SIG_UNBLOCK, &mask, NULL)) {
-        // m_log << "enable SIGIO failed for plan[" << task.getID() << "]." << std::endl;
+        // m_log << "enable OVERFLOW_SIG failed for plan[" << task.getID() << "]." << std::endl;
         return -errno;
     }
 
@@ -200,9 +200,11 @@ ParallelProfiler::createSignalFD() {
     sigemptyset(&mask);
     sigaddset(&mask, SIGINT);
     sigaddset(&mask, SIGCHLD);
-    sigaddset(&mask, SIGIO);
+    sigaddset(&mask, ParallelProfiler::OVERFLOW_SIG);
 
     if (-1 != sigprocmask(SIG_BLOCK, &mask, NULL)) {
+        // We do not handle OVERFLOW_SIG, just ignore it.
+        sigdelset(&mask, ParallelProfiler::OVERFLOW_SIG);
         return signalfd(-1, &mask, 0);
     }
 
@@ -261,6 +263,7 @@ ParallelProfiler::wakeupAll() {
             if (!wakeupChild(pid, 0)) {
                 return false;
             }
+            std::cout << "wake up plan[" << config.m_plan.getID() << "] done." << std::endl;
         }
     }
     return true;
@@ -279,11 +282,11 @@ ParallelProfiler::wakeupAll() {
  * Process signal for child according to each profile status.
  * READY:   Only accept SIGTRAP from children, if not then return false.
  *          Wakeup all children When they are ready, and step into INIT or PROFILE according to phase conditions.
- * INIT:    Step phaseno when accept SIGIO, deliver other signal for child.
+ * INIT:    Step phaseno when accept OVERFLOW_SIG, deliver other signal for child.
  *          A phase condition is satisfied when child phaseno matches its start point.
  *          If phaseno exceed its start point, we should abort.
  *          Step into PROFILE when all children meets their phase condition.
- * PROFILE: Step phaseno and collect data when accept SIGIO, deliver other signal for child.
+ * PROFILE: Step phaseno and collect data when accept OVERFLOW_SIG, deliver other signal for child.
  * OTHER:   Something goes wrong when do the profile, abort anyway.
  * 
  * @returns false when syscall failed, otherwise return true.
@@ -423,7 +426,7 @@ ParallelProfiler::handleChild(pid_t pid) {
                 break;
 
             case INIT:
-                // In INIT stage, SIGIO only send to the child who generates an overflow.
+                // In INIT stage, OVERFLOW_SIG only send to the child who generates an overflow.
                 // Only SAMPLE_PHASE plan can step into this stage.
                 if (plan.getType() != Plan::Type::SAMPLE_PHASE) {
                     m_log << "plan[" << plan.getID() << "] shouldn't step into INIT stage." << std::endl;
@@ -432,8 +435,8 @@ ParallelProfiler::handleChild(pid_t pid) {
                 }
 
                 // Process signal for this child.
-                if (SIGIO == signo) {
-                    // Receive SIGIO when an overflow occurs.
+                if (ParallelProfiler::OVERFLOW_SIG == signo) {
+                    // Receive OVERFLOW_SIG when an overflow occurs.
 
                     // Update phaseno for child.
                     if (!updatePhase(pid)) {
@@ -479,9 +482,9 @@ ParallelProfiler::handleChild(pid_t pid) {
                 break;
 
             case PROFILE:
-                // In PROFILE stage, SIGIO will be send for group, which means all
-                // children will recv SIGIO and deliver it to main process.
-                if (SIGIO == signo) {
+                // In PROFILE stage, OVERFLOW_SIG will be send for group, which means all
+                // children will recv OVERFLOW_SIG and deliver it to main process.
+                if (ParallelProfiler::OVERFLOW_SIG == signo) {
                     // Use m_pstatus[PROFILE] to sync all children here.
                     m_pstatus[ProfileStatus::PROFILE].insert(pid);
                 } else {
@@ -492,7 +495,7 @@ ParallelProfiler::handleChild(pid_t pid) {
                 }
 
                 if (m_pidmap.size() == m_pstatus[ProfileStatus::PROFILE].size()) {
-                    // Sync done, all children have been stopped by SIGIO, reset m_pstatus to prepare for next sync.
+                    // Sync done, all children have been stopped by OVERFLOW_SIG, reset m_pstatus to prepare for next sync.
                     m_pstatus[ProfileStatus::PROFILE].clear();
 
                     // Collect data for perf plan and update phase for sample plan.
@@ -547,12 +550,15 @@ ParallelProfiler::handleSignal(int sfd) {
         return false;
     }
 
+    m_log << "recv signal from pid[" << fdsi.ssi_pid << "] fd[" << fdsi.ssi_fd << 
+        "] tid[" << fdsi.ssi_tid << "] signo[" << fdsi.ssi_signo << "]." << std::endl;
+
     switch (fdsi.ssi_signo) {
     case SIGINT:
         m_log << "receive SIGINT, stop profiling" << std::endl;
         setStatus(ProfileStatus::ABORT);
         break;
-    case SIGIO:
+    case ParallelProfiler::OVERFLOW_SIG:
         break;
     case SIGCHLD:
         return handleChild(fdsi.ssi_pid);
@@ -645,8 +651,8 @@ ParallelProfiler::profile() {
                 for (size_t i=0; i<sample.size(); ++i) { sum[i] += sample[i]; }
             }
 
-            // m_output << "sample for plan[" << plan.getID() << "] with phaseno[" << config.m_phaseno << "]." << std::endl;
-            // m_output << samples;
+            m_output << "sample for plan[" << plan.getID() << "] with phaseno[" << config.m_phaseno << "]." << std::endl;
+            m_output << samples;
             m_output << "sum for plan[" << plan.getID() << "]: " << sum << std::endl;
         }
     }
@@ -822,9 +828,16 @@ ParallelProfiler::gotoINIT() {
             return false;
         }
 
-        // Reset the perf event.
+        // Set signal while fd is readable.
+        if (!File::setFileSignal(fd, ParallelProfiler::OVERFLOW_SIG)) {
+            m_log << "set file signal failed for plan[" << plan.getID() << "]." << std::endl;
+            return false;
+        }
+
+        // Reset and Start the perf event.
         try {
             event->Reset();
+            event->Start();
         } catch (PerfEventError e) {
             m_log << "failed to reset perf event for plan[" << plan.getID() << "]." << std::endl;
             return false;
@@ -863,15 +876,8 @@ ParallelProfiler::gotoPROFILE() {
         if (plan.samplePlan()) {
             // Get perf event fd.
             fd = event->GetFd();
-
-            // Set signal driven IO.
-            if (!File::enableSigalDrivenIO(fd)) {
-                // Failed to enable signal driven io, return false to report system error.
-                m_log << "enable signal driven io failed for plan[" << plan.getID() << "]." << std::endl;
-                return false;
-            }
             
-            // Set file owner to process group, so that all children can be synchronized by one SIGIO.
+            // Set file owner to process group, so that all children can be synchronized by one OVERFLOW_SIG.
             if (!File::setFileOwner(fd, -gid)) {
                 // Failed to set file owner, return false to report system error.
                 m_log << "set file owner failed for plan[" << plan.getID() << "]." << std::endl;
@@ -879,10 +885,11 @@ ParallelProfiler::gotoPROFILE() {
             }
         }
 
-        // Reset the perf event for all perf plan.
+        // Reset and Start perf event.
         if (plan.perfPlan()) {
             try {
                 event->Reset();
+                event->Start();
             } catch (PerfEventError e) {
                 m_log << "failed to reset perf event for plan[" << plan.getID() << "]." << std::endl;
                 return false;
@@ -1004,8 +1011,6 @@ ParallelProfiler::buildRunningConfig(const Plan& plan) {
         // Configure this event, and we can use Start/Stop/Reset/ProcessEvents to profile.
         try {
             event->Configure();
-            event->Reset();
-            event->Start();
         } catch (PerfEventError e) {
             m_log << "failed to configure perf event for plan[" << plan.getID() << "]." << std::endl;
             goto killchild;

@@ -73,7 +73,7 @@ File::setFileOwner(int fd, pid_t owner) {
 }
 
 bool
-setFileSignal(int fd, int signo) {
+File::setFileSignal(int fd, int signo) {
     return fcntl(fd, F_SETSIG, signo) != -1;
 }
 

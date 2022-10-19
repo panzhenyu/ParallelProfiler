@@ -62,6 +62,8 @@ protected:
 
 class ParallelProfiler: public PerfProfiler {
 public:
+    static constexpr int OVERFLOW_SIG = 64;
+public:
     /**
      * Profile status
      * READY: All child processes have created correctly, the profiler should wait SIGTRAP to start all children.
@@ -86,7 +88,6 @@ public:
     };
     using pidmap_t  = std::unordered_map<pid_t, RunningConfig>;
     using procset_t = std::unordered_set<pid_t>;
-
 private:
     /**
      * @brief   Setup function for Utils::Posix::Process::start.

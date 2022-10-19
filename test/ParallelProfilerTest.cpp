@@ -11,8 +11,8 @@ int main(int argc, char* argv[]) {
 
     TaskAttribute normalLS = TaskAttributeFactory::normalTaskAttribute(ls, {"-la"}, false, false);
     TaskAttribute normalDaemon = TaskAttributeFactory::normalTaskAttribute(daemon, {}, false, false);
-    TaskAttribute phaseDaemon1 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 3, 9);
-    TaskAttribute phaseDaemon2 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 4, 8);
+    TaskAttribute phaseDaemon1 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 5, 9);
+    TaskAttribute phaseDaemon2 = TaskAttributeFactory::generalTaskAttribute(daemon, {}, true, true, 3, 10);
 
     PerfAttribute sampleINS = PerfAttributeFactory::generalPerfAttribute(
         "PERF_COUNT_HW_INSTRUCTIONS", 10000000, {"PERF_COUNT_HW_CPU_CYCLES", "LLC_MISSES"});
