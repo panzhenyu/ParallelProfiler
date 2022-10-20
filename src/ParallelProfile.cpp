@@ -6,22 +6,22 @@
 /**
  * [Usage]
  *      sudo ./ParallelProfile
- *          --task-conf=conf/task.json                          Required
- *          --plan-conf=conf/plan.json                          Required
- *          --cpu=1,2~4                                         Optional, default is empty
- *          --output=                                           Optional, default is stdout
- *          --log=                                              Optional, default is stderr
- *          --plan=Set2024 --plan=Set2036                       At least one plan
- *          --plan="key=value[&&key=value]"                     Optional(support diy plan without configuration)
- *              [keys]
- *              type=DAEMON//COUNT/SAMPLE_ALL/SAMPLE_PHASE      Required
- *              task='cmd'                                      Required
- *              rt=true/false                                   Optional, default is false
- *              pincpu=true/false                               Optional, default is false
- *              phase=start,end                                 Optional, default is 0,0
- *              perf-leader=                                    Optional, default is empty string
- *              sample-period=                                  Optional, default is 0
- *              perf-member=MEMBER[,MEMBER]                     Optional, default is empty member
+ *          --task-conf                         Required    path for file, such as conf/task.json
+ *          --plan-conf                         Required    path for file, such as conf/plan.json
+ *          --output                            Optional    path for file, default is stdout
+ *          --log                               Optional    path for file, default is stderr
+ *          --cpu                               Optional    such as 1,2~4, default is empty
+ *          --plan                              Repeated    such as id or "{key:value[,key:value]}", at least one plan
+ * [Supported Key]
+ *          id                                  Required    such as "myplan"
+*           task                                Required    such as "./task"
+ *          type                                Required    choose "DAEMON" or "COUNT" or "SAMPLE_ALL" or "SAMPLE_PHASE"
+ *          rt                                  Optional    choose true or false, default is false
+ *          pincpu                              Optional    choose true or false, default is false
+ *          phase                               Optional    such as [start,end], default is [0,0]
+ *          perf-leader                         Optional    such as "INSTURCTIONS", default is empty
+ *          sample-period                       Optional    default is 0
+ *          perf-member                         Optional    such as [MEMBER1, MEMBER2], default is empty
  */
 struct ProfilerArguments {
 public:
