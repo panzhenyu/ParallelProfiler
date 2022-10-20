@@ -1,31 +1,46 @@
 [
     {
         "id": "Set2022",
+        "type": "DAEMON",
         "task": {
             "id": "SetScanner",
             "param": ["20", "30"],
-            "phase": [1, 100],
-            "rt": true
+            "rt": true,
+            "pincpu": true,
+            "phase": [1, 100]
         },
-        "sample": {
+        "perf": {
             "leader": "INSTRUCTIONS",
-            "period": 10000000,
-            "event": ["CYCLE", "LLC-MISSES", "LLC-ACCESS"]
+            "period": 1000,
+            "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
         }
     },
     {
         "id": "Set2023",
+        "type": "DAEMON",
         "task": {
             "id": "SetScanner",
             "param": ["20", "30"],
-            "phase": [1, 100],
-            "rt": true
+            "rt": true,
+            "pincpu": true
         },
-        "sample": {
+        "perf": {
             "leader": "INSTRUCTIONS",
-            "period": 10000000,
-            "type": ["PERF_SAMPLE_IP"],
-            "event": ["CYCLE", "LLC-MISSES", "LLC-ACCESS"]
+            "period": 1000000,
+            "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
+        }
+    },
+    {
+        "id": "ls",
+        "type": "DAEMON",
+        "task": {
+            "id": "ls",
+            "rt": true,
+            "pincpu": false
+        },
+        "perf": {
+            "leader": "INSTRUCTIONS",
+            "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
         }
     }
 ]
