@@ -1,64 +1,8 @@
 #pragma once
 
-#include <memory>
-#include <ostream>
-#include <algorithm>
 #include <unordered_set>
 #include <unordered_map>
-#include "Config.hpp"
-#include "PerfEventWrapper.hpp"
-
-using Utils::Perf::Event;
-using EventPtr = boost::shared_ptr<Event>;
-
-struct IPerfProfiler {
-    virtual int profile() = 0;
-};
-
-class PerfProfiler: public IPerfProfiler {
-public:
-    using sample_t  = std::vector<uint64_t>;
-
-public:
-    static void collectSample(Utils::Perf::Event* e, void* v, int status);
-
-public:
-    PerfProfiler(std::ostream& log, std::ostream& output);
-
-    /**
-     * @brief Profile a task, not implement yet.
-     */
-    virtual int profile() { return true; }
-
-    /**
-     * @brief Collect sample event by reading mmap buffer.
-     */
-    bool collect(EventPtr event, std::vector<sample_t>& data);
-
-    /**
-     * @brief Collect sample/count event by reading event fd.
-     */
-    bool collect(EventPtr event, sample_t& data);
-
-    /**
-     * @brief Create an event group with group leader(leader) and group member(memberEvents).
-     * @param[in] perf Describe a static perf attribute.
-     * @returns nullptr if failed.
-     */
-    EventPtr initEvent(const PerfAttribute& perf);
-
-protected:
-    /**
-     * @brief Ostream object for log.
-     */
-    std::ostream&               m_log;
-
-    /**
-     * @brief Ostream object for output perf data.
-     */
-    std::ostream&               m_output;
-
-};
+#include "PerfProfiler.hpp"
 
 class ParallelProfiler: public PerfProfiler {
 public:
@@ -88,6 +32,8 @@ public:
     };
     using pidmap_t  = std::unordered_map<pid_t, RunningConfig>;
     using procset_t = std::unordered_set<pid_t>;
+    using result_t  = std::unordered_map<std::string, sample_t>;
+
 private:
     /**
      * @brief   Setup function for Utils::Posix::Process::start.
@@ -128,6 +74,7 @@ public:
     // Getter
 
     ProfileStatus getStatus() const;
+    const result_t& getLastResult() const;
 
     //------------------------------------------------------------------------//
     // Controller
@@ -221,21 +168,17 @@ protected:
      * @brief Describe profiling status of each process. When m_pstatus[prof].count(pid) means pid has reached prof status.
      */
     std::array<procset_t, NR>   m_pstatus;
+
+    /**
+     * @brief Store result.
+     */
+    result_t                    m_result;
+
+    //------------------------------------------------------------------------//
 };
 
 //----------------------------------------------------------------------------//
-// PerfProfiler
-
-PerfProfiler::PerfProfiler(std::ostream& log, std::ostream& output) : m_log(log), m_output(output) {}
-
-//----------------------------------------------------------------------------//
 // ParallelProfiler
-
-ParallelProfiler::RunningConfig::RunningConfig(const Plan& plan)
-    : m_pid(-1), m_cpu(-1), m_plan(plan), m_event(nullptr), m_phaseno(0), m_status(Status::RUN) {}
-
-ParallelProfiler::ParallelProfiler(std::ostream& log, std::ostream& output)
-    : PerfProfiler(log, output), m_status(ProfileStatus::ABORT) {}
 
 inline void
 ParallelProfiler::addCPUSet(int cpu) {
@@ -266,6 +209,12 @@ ParallelProfiler::setStatus(ProfileStatus status) {
 inline ParallelProfiler::ProfileStatus
 ParallelProfiler::getStatus() const {
     return m_status;
+}
+
+
+inline const ParallelProfiler::result_t&
+ParallelProfiler::getLastResult() const {
+    return m_result;
 }
 
 //----------------------------------------------------------------------------//

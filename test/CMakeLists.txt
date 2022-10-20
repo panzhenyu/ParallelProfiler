@@ -14,4 +14,4 @@ add_executable(PerfWrapperTest PerfWrapperTest.cpp)
 target_link_libraries(PerfWrapperTest ParallelProfiler)
 
 # add include path
-include_directories(../src)
+include_directories(../src/Profiler ../src/ThirdParty ../src/Utils)

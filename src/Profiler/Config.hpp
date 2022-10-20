@@ -251,34 +251,6 @@ protected:
 
 };
 
-/**
- * SystemConfig
- * collect system config such as cpu num
- */
-class SystemConfig: public IValidConf {
-public:
-    virtual bool valid() const override;
-
-};
-
-/**
- * TaskConfig
- * Parse task config file, provide task object
- */
-class TaskConfig: public IValidConf {
-public:
-    virtual bool valid() const override;
-};
-
-/**
- * PlanConfig
- * Parse plan config file, provide plan object
- */
-class PlanConfig: public IValidConf {
-public:
-    virtual bool valid() const override;
-};
-
 //----------------------------------------------------------------------------//
 // Task
 
@@ -317,8 +289,6 @@ Task::getCmd() const {
 
 //----------------------------------------------------------------------------//
 // TaskAttribute
-
-TaskAttribute::TaskAttribute(const Task& task): m_task(task) {}
 
 inline TaskAttribute&
 TaskAttribute::setTask(const Task& task) {
@@ -436,30 +406,6 @@ PerfAttribute::getEvents() const {
 
 //----------------------------------------------------------------------------//
 // Plan
-
-Plan::Plan(const TaskAttribute& task, const PerfAttribute& perf)
-    : m_task(task), m_perf(perf) {}
-
-inline bool
-Plan::valid() const {
-    const std::string& leader = m_perf.getLeader();
-    uint64_t period = m_perf.getPeriod();
-    uint64_t phaseStart = m_task.getPhaseBegin();
-    uint64_t phaseEnd = m_task.getPhaseEnd();
-
-    // Plan ID must exist.
-    if (m_id.empty()) { return false; }
-
-    // Check arguments for different plan type.
-    switch (m_type) {
-    case Type::DAEMON: return true;
-    case Type::COUNT: return !leader.empty();
-    case Type::SAMPLE_ALL: return !leader.empty() && period > 0;
-    case Type::SAMPLE_PHASE: return !leader.empty() && period > 0 && phaseStart < phaseEnd;
-    }
-
-    return true;
-}
 
 inline bool
 Plan::samplePlan() const {
