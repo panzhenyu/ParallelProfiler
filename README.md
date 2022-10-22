@@ -19,6 +19,26 @@ Perf profiler for parallel process
 2.  xxxx
 3.  xxxx
 
+[Usage]
+    sudo ./ParallelProfile
+        --config                            Optional    file path, such as conf/example.json, default is empty
+        --output                            Optional    file path, default is stdout
+        --log                               Optional    file path, default is stderr
+        --cpu                               Optional    such as 1,2~4, default is empty
+        --plan                              Repeated    such as id or "{key:value[,key:value]}", at least one plan
+
+[Key]
+        id                                  Required    such as "myplan"
+        task                                Required    such as "./task"
+        type                                Required    choose "DAEMON" or "COUNT" or "SAMPLE_ALL" or "SAMPLE_PHASE"
+        rt                                  Optional    choose true or false, default is false
+        pincpu                              Optional    choose true or false, default is false
+        phase                               Optional    such as [start,end], default is [0,0]
+        perf-leader                         Optional    such as "INSTURCTIONS", default is empty
+        sample-period                       Optional    default is 0
+        perf-member                         Optional    such as [MEMBER1, MEMBER2], default is empty
+
+
 #### 参与贡献
 
 1.  Fork 本仓库
