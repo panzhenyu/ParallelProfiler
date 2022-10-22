@@ -126,6 +126,8 @@ ParallelProfiler::wakeupChild(pid_t pid, int signo) {
     if (-1 == ptrace(PTRACE_CONT, pid, NULL, (void*)((long)signo))) { return false; }
 
     config.m_status = RunningConfig::RUN;
+    
+    m_log << "wake up plan[" << config.m_plan.getID() << "] done." << std::endl;
 
     return true;
 }
@@ -137,7 +139,6 @@ ParallelProfiler::wakeupAll() {
             if (!wakeupChild(pid, 0)) {
                 return false;
             }
-            std::cout << "wake up plan[" << config.m_plan.getID() << "] done." << std::endl;
         }
     }
     return true;
@@ -691,8 +692,7 @@ ParallelProfiler::gotoINIT() {
         // Set signal driven IO for sample plan.
         if (!File::enableSigalDrivenIO(fd)) {
             // Failed to enable signal driven io, return false to report system error.
-            m_log << "enable signal driven io failed for plan[" <<
-                plan.getID() << "]." << std::endl;
+            m_log << "enable signal driven io failed for plan[" << plan.getID() << "]." << std::endl;
             return false;
         }
         
@@ -748,14 +748,29 @@ ParallelProfiler::gotoPROFILE() {
         const Plan& plan = config.m_plan;
 
         // Setup sample plan.
+        // Note that we must re-enable signal driven io here.
+        // Cause the SMAPLE_PHASE plan may not step into INIT stage if the phase start is zero.
         if (plan.samplePlan()) {
             // Get perf event fd.
             fd = event->GetFd();
+
+            // Set signal driven IO for sample plan.
+            if (!File::enableSigalDrivenIO(fd)) {
+                // Failed to enable signal driven io, return false to report system error.
+                m_log << "enable signal driven io failed for plan[" << plan.getID() << "]." << std::endl;
+                return false;
+            }
             
             // Set file owner to process group, so that all children can be synchronized by one OVERFLOW_SIG.
             if (!File::setFileOwner(fd, -gid)) {
                 // Failed to set file owner, return false to report system error.
                 m_log << "set file owner failed for plan[" << plan.getID() << "]." << std::endl;
+                return false;
+            }
+
+            // Set signal while fd is readable.
+            if (!File::setFileSignal(fd, ParallelProfiler::OVERFLOW_SIG)) {
+                m_log << "set file signal failed for plan[" << plan.getID() << "]." << std::endl;
                 return false;
             }
         }
@@ -792,9 +807,9 @@ ParallelProfiler::gotoDONE() {
     // Stop perf event for perf plan.
     try {
         for (auto& [pid, config] : m_pidmap) {
-            EventPtr event = config.m_event;
-            const Plan& plan = config.m_plan;
-            if (plan.perfPlan()) { event->Stop(); }
+            if (config.m_plan.perfPlan()) {
+                config.m_event->Stop();
+            }
         }
     } catch (PerfEventError e) {
         m_log << "failed to stop perf event while gotoDONE." << std::endl;
@@ -838,6 +853,8 @@ ParallelProfiler::buildRunningConfig(const Plan& plan) {
     
     // Start process.
     if (-1 == (pid=Process::start(std::bind(ParallelProfiler::setupSyncTask, task.getTask()), cmdVector))) { return false; }
+
+    m_log << "start plan[" << plan.getID() << "] at pid[" << pid << "]." << std::endl;
 
     // Pin cpu for process.
     if (task.needPinCPU()) {

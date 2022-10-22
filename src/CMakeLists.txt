@@ -7,8 +7,8 @@ ParallelProfile.cpp
 include_directories(Profiler ThirdParty Utils)
 
 # build executable
-add_executable(profiler profiler.cpp)
-target_link_libraries(profiler ParallelProfiler)
+add_executable(ParallelProfile ParallelProfile.cpp)
+target_link_libraries(ParallelProfile ParallelProfiler ${Boost_LIBRARIES})
 
 # add sub dir
 add_subdirectory(Profiler)
