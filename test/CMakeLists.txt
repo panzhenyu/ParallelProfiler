@@ -13,5 +13,8 @@ target_link_libraries(ParallelProfilerTest ParallelProfiler)
 add_executable(PerfWrapperTest PerfWrapperTest.cpp)
 target_link_libraries(PerfWrapperTest ParallelProfiler)
 
+add_executable(ConfigAnalyserTest ConfigAnalyserTest.cpp ../src/ConfigAnalyser.cpp)
+target_link_libraries(ConfigAnalyserTest ParallelProfiler)
+
 # add include path
-include_directories(../src/Profiler ../src/ThirdParty ../src/Utils)
+include_directories(../src/Profiler ../src/ThirdParty ../src/Utils ../src)

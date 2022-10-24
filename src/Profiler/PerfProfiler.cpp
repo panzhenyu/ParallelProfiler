@@ -136,3 +136,5 @@ PerfProfiler::initEvent(const PerfAttribute& perf) {
 
     return output;
 }
+
+//----------------------------------------------------------------------------//

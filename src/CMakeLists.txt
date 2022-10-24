@@ -1,6 +1,7 @@
 # add source file
 set(SRCS
 ParallelProfile.cpp
+ConfigAnalyser.cpp
 )
 
 # add include path
