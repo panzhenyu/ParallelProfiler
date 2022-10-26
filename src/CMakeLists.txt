@@ -1,15 +1,15 @@
 # add source file
 set(SRCS
-ParallelProfile.cpp
-ConfigAnalyser.cpp
+profile.cpp
+ConfigParser.cpp
 )
 
 # add include path
 include_directories(Profiler ThirdParty Utils)
 
 # build executable
-add_executable(ParallelProfile ParallelProfile.cpp)
-target_link_libraries(ParallelProfile ParallelProfiler ${Boost_LIBRARIES})
+add_executable(profile ${SRCS})
+target_link_libraries(profile ParallelProfiler ${Boost_LIBRARIES})
 
 # add sub dir
 add_subdirectory(Profiler)

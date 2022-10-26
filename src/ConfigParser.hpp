@@ -31,9 +31,11 @@ public:
     };
 
 public:
+    pair<Plan, ParseError> parseJsonPlan(const string& json);
     ParseError parseJson(const string& json);
     ParseError parseFile(const string& file);
     ParseError parseFile(ifstream& ifs);
+
     const string& getJson() const;
     unordered_map<string, Task>::const_iterator taskBegin() const;
     unordered_map<string, Task>::const_iterator taskEnd() const;

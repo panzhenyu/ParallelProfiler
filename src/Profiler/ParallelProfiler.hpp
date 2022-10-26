@@ -71,6 +71,12 @@ public:
     void setStatus(ProfileStatus status);
 
     //------------------------------------------------------------------------//
+    // Info reporter
+
+    std::string showCPUSet() const;
+    std::string showPlan() const;
+
+    //------------------------------------------------------------------------//
     // Getter
 
     ProfileStatus getStatus() const;
@@ -204,6 +210,28 @@ ParallelProfiler::addPlan(const Plan& plan) {
 inline void
 ParallelProfiler::setStatus(ProfileStatus status) {
     m_status = status;
+}
+
+inline std::string
+ParallelProfiler::showCPUSet() const {
+    std::string out;
+    for (auto cpu : m_cpuset) {
+        out += std::to_string(cpu);
+        out += ",";
+    }
+    if (!out.empty()) { out.pop_back(); }
+    return out;
+}
+
+inline std::string
+ParallelProfiler::showPlan() const {
+    std::string out;
+    for (const auto& plan : m_plan) {
+        out += plan.getID();
+        out += ",";
+    }
+    if (!out.empty()) { out.pop_back(); }
+    return out;
 }
 
 inline ParallelProfiler::ProfileStatus

@@ -10,6 +10,73 @@ static unordered_map<string, Plan::Type> planType = {
     { "SAMPLE_PHASE",   Plan::Type::SAMPLE_PHASE },
 };
 
+pair<Plan, ConfigParser::ParseError>
+ConfigParser::parseJsonPlan(const string& json) {
+    vector<string> events;
+    rapidjson::Document doc;
+    Task task = TaskFactory::defaultTask();
+    Plan plan = PlanFactory::defaultPlan();
+
+    if (doc.Parse(json.c_str()).HasParseError() || !doc.IsObject()) {
+        return {plan, CONF_FORMAT_ERROR};
+    }
+
+    // Parse required field.
+    if (!doc.HasMember("id") || !doc.HasMember("task") || !doc.HasMember("type") ||
+        !doc["id"].IsString() || !doc["task"].IsString() || !doc["type"].IsString() ||
+        !planType.count(doc["type"].GetString())) {
+        return {plan, CONF_FORMAT_ERROR};
+    }
+    task = TaskFactory::buildTask("diy", doc["task"].GetString());
+    plan.setID(doc["id"].GetString()).setType(planType.at(doc["type"].GetString()));
+
+    // Parse optional field.
+
+    // Parse field for task attr.
+    {
+        TaskAttribute taskAttr = TaskAttributeFactory::defaultTaskAttribute();
+        // Parse rt if exists.
+        if (doc.HasMember("rt")) {
+            const auto& rt = doc["rt"];
+            if (!rt.IsBool()) {
+                return {plan, CONF_FORMAT_ERROR};
+            }
+            taskAttr.setRT(rt.GetBool());
+        }
+
+        // Parse pincpu if exists.
+        if (doc.HasMember("pincpu")) {
+            const auto& pincpu = doc["pincpu"];
+            if (!pincpu.IsBool()) {
+                return {plan, CONF_FORMAT_ERROR};
+            }
+            taskAttr.setPinCPU(pincpu.GetBool());
+        }
+
+        // Parse phase if exists.
+        if (doc.HasMember("phase")) {
+            const auto& phase = doc["phase"];
+            if (!phase.IsArray() || 2 != phase.Size() || !phase[0].IsUint64() || !phase[1].IsUint64()) {
+                return {plan, CONF_FORMAT_ERROR};
+            }
+            taskAttr.setPhaseBegin(phase[0].GetUint64());
+            taskAttr.setPhaseEnd(phase[1].GetUint64());
+        }
+        plan.setTaskAttribute(taskAttr.setTask(task));
+    }
+
+    // Parse field for phase attr.
+    {
+        auto [perfAttr, error] = parsePerfAttribute(doc);
+        if (error != PARSE_OK) {
+            return {plan, CONF_FORMAT_ERROR};
+        }
+        plan.setPerfAttribute(perfAttr);
+    }
+
+    return {plan, PARSE_OK};
+}
+
 ConfigParser::ParseError
 ConfigParser::parseJson(const string& json) {
     rapidjson::Document doc;
@@ -116,7 +183,7 @@ ConfigParser::parseTask(const rapidjson::Value& val) {
 
 pair<Plan, ConfigParser::ParseError>
 ConfigParser::parsePlan(const rapidjson::Value& val) {
-    Plan plan = PlanFactory::defaultPlan("planid", Plan::Type::DAEMON);
+    Plan plan = PlanFactory::defaultPlan();
 
     // Parse each plan.
     if (!val.IsObject() || !val.HasMember("id") || !val.HasMember("type")) {

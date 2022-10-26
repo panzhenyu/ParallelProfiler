@@ -8,17 +8,16 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include "Config.hpp"
+#include "ConfigParser.hpp"
 #include "ConfigFactory.hpp"
-#include "rapidjson/reader.h"
 #include "ParallelProfiler.hpp"
-#include "rapidjson/document.h"
 
 using namespace std;
 namespace po = boost::program_options;
 
 /**
  * [Usage]
- *      sudo ./ParallelProfile
+ *      sudo ./profile
  *          --config                            Optional    file path, such as conf/example.json, default is empty
  *          --output                            Optional    file path, default is stdout
  *          --log                               Optional    file path, default is stderr
@@ -31,18 +30,12 @@ namespace po = boost::program_options;
  *          rt                                  Optional    choose true or false, default is false
  *          pincpu                              Optional    choose true or false, default is false
  *          phase                               Optional    such as [start,end], default is [0,0]
- *          perf-leader                         Optional    such as "INSTURCTIONS", default is empty
- *          sample-period                       Optional    default is 0
- *          perf-member                         Optional    such as [MEMBER1, MEMBER2], default is empty
+ *          leader                              Optional    such as "INSTURCTIONS", default is empty
+ *          period                              Optional    default is 0
+ *          member                              Optional    such as [MEMBER1, MEMBER2], default is empty
  */
 
-enum ErrCode {
-    UNKNOWN_OPT=1,
-    INVALID_CPU,
-    ZERO_PLAN,
-    CONFLICT_CPU,
-    CONFLICT_PLAN,
-};
+#define ERRCODE -1
 
 #define ERR     cout << "[ERROR] "
 #define INFO    cout << "[INFO]  "
@@ -50,7 +43,7 @@ enum ErrCode {
 struct ProfilerArguments {
 public:
     void parse(int argc, char* argv[]) {
-        po::options_description desc("ParallelProfile [--options]");
+        po::options_description desc("profile [--options]");
         po::variables_map vm;
         string cpu;
 
@@ -67,7 +60,7 @@ public:
             po::notify(vm);
         } catch (...) {
             ERR << "unrecognized option exits." << endl;
-            exit(-UNKNOWN_OPT);
+            exit(ERRCODE);
         }
 
         if (vm.count("help")) {
@@ -76,6 +69,7 @@ public:
         } else {
             if (!cpu.empty()) {
                 int pos, begin, end;
+                unordered_set<int> cpuno;
                 vector<string> cpusetSplit;
 
                 // Case: --cpu=1,2~4
@@ -86,7 +80,7 @@ public:
                     for (auto& cpuset : cpusetSplit) {
                         if (string::npos == (pos=cpuset.find("~"))) {
                             // Pattern: 1
-                            m_cpu.emplace_back(boost::lexical_cast<int>(cpuset));
+                            cpuno.insert(boost::lexical_cast<int>(cpuset));
                         } else {
                             // Pattern: 2~4
                             begin = boost::lexical_cast<int>(cpuset.substr(0, pos));
@@ -94,27 +88,21 @@ public:
 
                             // Add 2, 3, 4 to m_cpu.
                             for (int i=begin; i<=end; ++i) {
-                                m_cpu.emplace_back(i);
+                                cpuno.insert(i);
                             }
                         }
                     }
                 } catch (...) {
                     ERR << "invalid argument [--cpu=" << cpu << "]." << endl;
-                    exit(-INVALID_CPU);
+                    exit(ERRCODE);
                 }
-            }
-            // CPU no cannot repeat.
-            sort(m_cpu.begin(), m_cpu.end());
-            for (int i=0; i<m_cpu.size()-1; ++i) {
-                if (m_cpu[i] == m_cpu[i+1]) {
-                    ERR << "conflict cpuno[" << m_cpu[i] << "]." << endl;
-                    exit(-CONFLICT_CPU);
-                }
+
+                m_cpu.insert(m_cpu.end(), cpuno.begin(), cpuno.end());
             }
 
             if (m_plan.empty()) {
                 ERR << "invalid plan num[" << m_plan.size() << "], provide one plan at least" << "." << endl;
-                exit(-ZERO_PLAN);
+                exit(ERRCODE);
             }
         }
     }
@@ -127,20 +115,12 @@ public:
     vector<string>      m_plan;
 };
 
-Plan parseFromString(const string& planStr, const rapidjson::Document& config) {
-    return PlanFactory::defaultPlan("plan", Plan::Type::DAEMON);
-}
-
 int main(int argc, char *argv[]) {
     ProfilerArguments args;
-    rapidjson::Document config;
     ofstream outfile, logfile;
     ostream *output, *log;
 
     args.parse(argc, argv);
-
-    // Get json doc for config.
-    config.Parse(args.m_config.c_str());
 
     // Get output stream.
     if (!args.m_output.empty()) {
@@ -159,21 +139,50 @@ int main(int argc, char *argv[]) {
     }
 
     // CPU set has already been parsed.
-
     // Build profiler.
     ParallelProfiler profiler(*log, *output);
     profiler.setCPUSet(args.m_cpu);
 
-    // Parse and add plan.
-    unordered_set<string> planid;
-    for (const string& planStr : args.m_plan) {
-        Plan plan = parseFromString(planStr, config);
-        if (planid.count(plan.getID())) {
-            ERR << "conflict planid[" << plan.getID() << "]." << endl;
-            exit(-CONFLICT_PLAN);
+    // Parse config(if exists) and add plan.
+    {
+        ConfigParser parser;
+        unordered_set<string> plans;
+        Plan plan = PlanFactory::defaultPlan();
+        if (!args.m_config.empty() && ConfigParser::PARSE_OK != parser.parseFile(args.m_config)) {
+            ERR << "failed to parse config[" << args.m_config << "]." << endl;
+            exit(ERRCODE);
         }
-        profiler.addPlan(plan);
-        planid.insert(plan.getID());
+        for (const string& planStr : args.m_plan) {
+            if (!planStr.empty() && planStr[0] == '{') {
+                // Parse json plan.
+                auto [_plan, error] = parser.parseJsonPlan(planStr);
+                if (ConfigParser::PARSE_OK != error) {
+                    ERR << "failed to add plan[" << planStr << "]." << endl;
+                    exit(ERRCODE);
+                } else if (!_plan.valid()) {
+                    ERR << "invalid plan[" << planStr << "]." << endl;
+                    exit(ERRCODE);
+                }
+                plan = _plan;
+            } else {
+                // Parse normal plan with plan id.
+                auto itr = parser.getPlan(planStr);
+                if (itr == parser.planEnd()) {
+                    ERR << "failed to add plan[" << planStr << "]." << endl;
+                    exit(ERRCODE);
+                }
+                plan = itr->second;
+            }
+
+            // Add plan.
+            string planID = plan.getID();
+            if (plans.count(planID)) {
+                ERR << "conflict plan[" << planID << "] when parse argument[" << planStr << "]." << endl;
+                exit(ERRCODE);
+            }
+            plans.insert(planID);
+            profiler.addPlan(plan);
+        }
     }
 
     // Log helper info before profile.
@@ -181,15 +190,8 @@ int main(int argc, char *argv[]) {
     INFO << "[Config] " << args.m_config << endl;
     INFO << "[Output] " << (args.m_output.empty() ? "stdout" : args.m_output) << endl;
     INFO << "[Log] " << (args.m_log.empty() ? "stdout" : args.m_log) << endl;
-    INFO << "[CPUSet] ";
-    for (auto cpu : args.m_cpu) {
-        cout << cpu << ",";
-    }
-    cout << endl;
-    INFO << "[Plan] ";
-    for (auto id : planid) {
-        cout << id << ",";
-    }
+    INFO << "[CPUSet] " << profiler.showCPUSet() << endl;
+    INFO << "[Plan] " << profiler.showPlan() << endl;
 
     return 0;
 }
