@@ -1,6 +1,7 @@
 
 #include <boost/make_shared.hpp>
 #include "PerfProfiler.hpp"
+#include "Logger.hpp"
 
 using Utils::Perf::PerfEventEncode;
 using Utils::Perf::ChildEvent;
@@ -8,7 +9,7 @@ using Utils::Perf::ChildEvent;
 //----------------------------------------------------------------------------//
 // PerfProfiler
 
-PerfProfiler::PerfProfiler(std::ostream& log, std::ostream& output) : m_log(log), m_output(output) {}
+PerfProfiler::PerfProfiler(std::ostream& log) : m_log(log) {}
 
 /**
  * @brief Callback for Event::ProcessEvents to collect samples.
@@ -120,7 +121,7 @@ PerfProfiler::initEvent(const PerfAttribute& perf) {
     for (size_t i=0; i<=events.size(); ++i) {
         curEvent = i == 0 ? perf.getLeader() : events[i-1];
         if (!Utils::Perf::getPerfEventEncoding(curEvent, curEncode)) {
-            m_log << "failed to get encoding for event[" << curEvent << "]." << std::endl;
+            LOG(ERROR) << "failed to get encoding for event[" << curEvent << "].";
             return nullptr;
         }
         encodes.emplace_back(curEncode);

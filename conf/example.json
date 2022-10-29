@@ -3,7 +3,7 @@
         {
             "id"  : "ls",
             "dir" : "/usr/bin",
-            "cmd" : "./ls"
+            "cmd" : "./ls /"
         },
         {
             "id"  : "SetScanner",
@@ -46,15 +46,16 @@
         },
         {
             "id": "ls",
-            "type": "DAEMON",
+            "type": "SAMPLE_ALL",
             "task": {
                 "id": "ls",
                 "rt": true,
-                "pincpu": false
+                "pincpu": true
             },
             "perf": {
                 "leader": "INSTRUCTIONS",
-                "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
+                "period": 200000,
+                "member": ["CYCLES", "LLC_MISSES", "LLC_REFERENCES"]
             }
         }
     ]

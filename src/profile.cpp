@@ -124,7 +124,7 @@ int main(int argc, char *argv[]) {
 
     // Get output stream.
     if (!args.m_output.empty()) {
-        outfile = ofstream(args.m_output.c_str(), std::ofstream::out);
+        outfile = ofstream(args.m_output.c_str(), std::ofstream::ate);
         output = &outfile;
     } else {
         output = &cout;
@@ -132,15 +132,15 @@ int main(int argc, char *argv[]) {
 
     // Get log stream.
     if (!args.m_log.empty()) {
-        logfile = ofstream(args.m_log.c_str(), std::ofstream::out);
-        output = &logfile;
+        logfile = ofstream(args.m_log.c_str(), std::ofstream::ate);
+        log = &logfile;
     } else {
-        output = &cerr;
+        log = &cerr;
     }
 
     // CPU set has already been parsed.
     // Build profiler.
-    ParallelProfiler profiler(*log, *output);
+    ParallelProfiler profiler(*log);
     profiler.setCPUSet(args.m_cpu);
 
     // Parse config(if exists) and add plan.
@@ -189,9 +189,22 @@ int main(int argc, char *argv[]) {
     INFO << "Start parallel profiling with setting:" << endl;
     INFO << "[Config] " << args.m_config << endl;
     INFO << "[Output] " << (args.m_output.empty() ? "stdout" : args.m_output) << endl;
-    INFO << "[Log] " << (args.m_log.empty() ? "stdout" : args.m_log) << endl;
+    INFO << "[Log] " << (args.m_log.empty() ? "stderr" : args.m_log) << endl;
     INFO << "[CPUSet] " << profiler.showCPUSet() << endl;
     INFO << "[Plan] " << profiler.showPlan() << endl;
 
-    return 0;
+    int err = profiler.profile();
+    INFO << "profile done with err[" << err << "]." << endl;
+    if (!err) {
+        const auto& result = profiler.getLastResult();
+        for (auto& [planid, sample] : result) {
+            *output << "[" << planid << "]" << endl;
+            for (auto& [event, count] : sample) {
+                *output << event << ": " << count << ", ";
+            }
+            *output << endl;
+        }
+    }
+
+    return err;
 }

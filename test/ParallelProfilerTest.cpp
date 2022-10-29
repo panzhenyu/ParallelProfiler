@@ -5,7 +5,7 @@
 using namespace std;
 
 int main(int argc, char* argv[]) {
-    ParallelProfiler profiler(cout, cout);
+    ParallelProfiler profiler(cout);
     Task ls = TaskFactory::buildTask("ls", "/bin/ls $1");
     Task daemon = TaskFactory::buildTask("daemon", "./TestDaemon");
     Task mcf = TaskFactory::buildTask("mcf", "./mcf_r_base.mytest-m64 inp.in", 

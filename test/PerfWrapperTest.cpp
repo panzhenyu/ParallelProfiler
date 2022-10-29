@@ -28,7 +28,7 @@ int main() {
     bool c1, c2;
     int ret, status;
     pid_t child1, child2;
-    PerfProfiler profiler(cout, cout);
+    PerfProfiler profiler(cout);
     PerfProfiler::sample_t sample;
     vector<PerfProfiler::sample_t> samples;
     PerfAttribute sampleINS = PerfAttributeFactory::generalPerfAttribute(
