@@ -203,32 +203,31 @@ int main(int argc, char *argv[]) {
         INFO << "[CPUSet] " << profiler.showCPUSet() << endl;
         INFO << "[Plan] " << profiler.showPlan() << endl;
     }
-    *log << endl << "[" << profiler.showPlan() << "]" << endl;
+    *log << "[" << profiler.showPlan() << "]" << endl;
 
     // Do profile.
     int err = profiler.profile();
     INFO << "profile done with err[" << err << "]." << endl;
 
+    // Do output.
     {
-        if (!err) {
+        if (!err && ParallelProfiler::DONE == profiler.getStatus()) {
             const auto& result = profiler.getLastResult();
+            
+            *output << '[' << profiler.showPlan() << ']' << endl;
             for (auto& [planid, sample] : result) {
-                *output << "[" << planid << "]" << endl;
+                *output << left << setw(15) << planid;
                 for (auto& [event, count] : sample) {
-                    *output << event << ": " << count << ", ";
+                    *output << "\t\t" << event << ':' << count;
                 }
                 *output << endl;
             }
         }
     }
 
-    // Close output & log stream.
-    if (!args.m_output.empty()) {
-        outfile.close();
-    }
-    if (!args.m_log.empty()) {
-        logfile.close();
-    }
+    // Flush output & log stream.
+    output->flush();
+    log->flush();
 
     return err;
 }
