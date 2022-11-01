@@ -1,62 +1,8 @@
 {
     "Task": [
-        {
-            "id"  : "ls",
-            "dir" : "/usr/bin",
-            "cmd" : "./ls /"
-        },
-        {
-            "id"  : "SetScanner",
-            "dir" : "/usr/bin",
-            "cmd" : "./SetScanner --set=$1 --assoc=$2"
-        }
     ],
 
     "Plan": [
-        {
-            "id": "Set2022",
-            "type": "DAEMON",
-            "task": {
-                "id": "SetScanner",
-                "param": ["20", "30"],
-                "rt": true,
-                "pincpu": true,
-                "phase": [1, 100]
-            },
-            "perf": {
-                "leader": "INSTRUCTIONS",
-                "period": 1000,
-                "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
-            }
-        },
-        {
-            "id": "Set2023",
-            "type": "DAEMON",
-            "task": {
-                "id": "SetScanner",
-                "param": ["20", "30"],
-                "rt": true,
-                "pincpu": true
-            },
-            "perf": {
-                "leader": "INSTRUCTIONS",
-                "period": 1000000,
-                "member": ["CYCLE", "LLC_MISSES", "LLC_ACCESS"]
-            }
-        },
-        {
-            "id": "ls",
-            "type": "SAMPLE_ALL",
-            "task": {
-                "id": "ls",
-                "rt": true,
-                "pincpu": true
-            },
-            "perf": {
-                "leader": "INSTRUCTIONS",
-                "period": 2000000,
-                "member": ["CYCLES", "LLC_MISSES", "LLC_REFERENCES"]
-            }
-        }
+
     ]
 }
