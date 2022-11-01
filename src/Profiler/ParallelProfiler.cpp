@@ -171,8 +171,8 @@ ParallelProfiler::handleChild(pid_t pid) {
         const Plan& plan = config.m_plan;
         const TaskAttribute& task = plan.getTaskAttribute();
 
-        LOG(INFO) << "At profile status: " << profStatus << " get plan: " << plan.getID() << " signal: " << WSTOPSIG(status) << 
-            " stop by signal?: " << WIFSTOPPED(status) << " terminated by signal?: " << WIFSIGNALED(status) << " exit normally?: " << WIFEXITED(status);
+        LOG(INFO) << "At profile status[" << profStatus2String[profStatus] << "] get plan[" << plan.getID() << "] signal[" << WSTOPSIG(status) << 
+            "] stop by signal?[" << WIFSTOPPED(status) << "] terminated by signal?[" << WIFSIGNALED(status) << "] exit normally?[" << WIFEXITED(status) << "].";
 
         if (WIFEXITED(status)) {
             // When we in here, there is a child exit normally.
@@ -509,8 +509,8 @@ ParallelProfiler::profile() {
 terminate:
     killAll();
     while (-1 != (ret=waitpid(0, NULL, 0))) {
-        LOG(INFO) << "Get pid: " << ret << " signal: " << WSTOPSIG(status) << " stop by signal?: " << WIFSTOPPED(status) << 
-            " terminated by signal?: " << WIFSIGNALED(status) << " exit normally?: " << WIFEXITED(status);
+        LOG(INFO) << "Get pid[" << ret << "] signal[" << WSTOPSIG(status) << "] stop by signal?[" << WIFSTOPPED(status) << 
+            "] terminated by signal?[" << WIFSIGNALED(status) << "] exit normally?[" << WIFEXITED(status) << "].";
     }
 
 finalize:

@@ -6,8 +6,6 @@
 
 class ParallelProfiler: public PerfProfiler {
 public:
-    static constexpr int OVERFLOW_SIG = 64;
-public:
     /**
      * Profile status
      * READY: All child processes have created correctly, the profiler should wait SIGTRAP to start all children.
@@ -18,6 +16,18 @@ public:
      */
     enum ProfileStatus { READY, INIT, PROFILE, DONE, ABORT, NR };
 
+public:
+    static constexpr int OVERFLOW_SIG = 64;
+    static constexpr char* profStatus2String[ParallelProfiler::NR+1] = {
+        (char*)"READY",
+        (char*)"INIT",
+        (char*)"PROFILE",
+        (char*)"DONE",
+        (char*)"ABORT",
+        (char*)"NR"
+    };
+
+public:
     struct RunningConfig {
         enum Status { RUN, STOP, DEAD };
         RunningConfig(const Plan&);

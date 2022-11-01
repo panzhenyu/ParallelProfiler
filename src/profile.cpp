@@ -98,6 +98,7 @@ public:
                 }
 
                 m_cpu.insert(m_cpu.end(), cpuno.begin(), cpuno.end());
+                sort(m_cpu.begin(), m_cpu.end());
             }
 
             if (m_plan.empty()) {
@@ -124,7 +125,11 @@ int main(int argc, char *argv[]) {
 
     // Get output stream.
     if (!args.m_output.empty()) {
-        outfile = ofstream(args.m_output.c_str(), std::ofstream::ate);
+        outfile = ofstream(args.m_output.c_str(), std::ofstream::app);
+        if (!outfile.is_open()) {
+            ERR << "failed to open output[" << args.m_output.c_str() << "]." << endl;
+            exit(ERRCODE);
+        }
         output = &outfile;
     } else {
         output = &cout;
@@ -132,7 +137,11 @@ int main(int argc, char *argv[]) {
 
     // Get log stream.
     if (!args.m_log.empty()) {
-        logfile = ofstream(args.m_log.c_str(), std::ofstream::ate);
+        logfile = ofstream(args.m_log.c_str(), std::ofstream::app);
+        if (!logfile.is_open()) {
+            ERR << "failed to open log[" << args.m_log.c_str() << "]." << endl;
+            exit(ERRCODE);
+        }
         log = &logfile;
     } else {
         log = &cerr;
@@ -186,24 +195,39 @@ int main(int argc, char *argv[]) {
     }
 
     // Log helper info before profile.
-    INFO << "Start parallel profiling with setting:" << endl;
-    INFO << "[Config] " << args.m_config << endl;
-    INFO << "[Output] " << (args.m_output.empty() ? "stdout" : args.m_output) << endl;
-    INFO << "[Log] " << (args.m_log.empty() ? "stderr" : args.m_log) << endl;
-    INFO << "[CPUSet] " << profiler.showCPUSet() << endl;
-    INFO << "[Plan] " << profiler.showPlan() << endl;
+    {
+        INFO << "Start parallel profiling with setting:" << endl;
+        INFO << "[Config] " << args.m_config << endl;
+        INFO << "[Output] " << (args.m_output.empty() ? "stdout" : args.m_output) << endl;
+        INFO << "[Log] " << (args.m_log.empty() ? "stderr" : args.m_log) << endl;
+        INFO << "[CPUSet] " << profiler.showCPUSet() << endl;
+        INFO << "[Plan] " << profiler.showPlan() << endl;
+    }
+    *log << endl << "[" << profiler.showPlan() << "]" << endl;
 
+    // Do profile.
     int err = profiler.profile();
     INFO << "profile done with err[" << err << "]." << endl;
-    if (!err) {
-        const auto& result = profiler.getLastResult();
-        for (auto& [planid, sample] : result) {
-            *output << "[" << planid << "]" << endl;
-            for (auto& [event, count] : sample) {
-                *output << event << ": " << count << ", ";
+
+    {
+        if (!err) {
+            const auto& result = profiler.getLastResult();
+            for (auto& [planid, sample] : result) {
+                *output << "[" << planid << "]" << endl;
+                for (auto& [event, count] : sample) {
+                    *output << event << ": " << count << ", ";
+                }
+                *output << endl;
             }
-            *output << endl;
         }
+    }
+
+    // Close output & log stream.
+    if (!args.m_output.empty()) {
+        outfile.close();
+    }
+    if (!args.m_log.empty()) {
+        logfile.close();
     }
 
     return err;

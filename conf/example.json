@@ -54,7 +54,7 @@
             },
             "perf": {
                 "leader": "INSTRUCTIONS",
-                "period": 200000,
+                "period": 2000000,
                 "member": ["CYCLES", "LLC_MISSES", "LLC_REFERENCES"]
             }
         }
