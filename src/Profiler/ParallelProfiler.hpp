@@ -171,7 +171,7 @@ protected:
     // Running config
 
     /**
-     * @brief Map for running config, pid_t -> RunningConfig, each RunningConfig profile an process.
+     * @brief Map for running config, pid_t -> RunningConfig, each RunningConfig profiles a process.
      */
     pidmap_t                        m_pidmap;
 

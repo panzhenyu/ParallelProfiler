@@ -128,7 +128,7 @@ ParallelProfiler::wakeupAll() {
 
 /**
  * Do profile here, use waitpid to sync all child process.
- * Note that a SIGCHLD may caused by many child processes, so use loop to wait for other child in same group.
+ * Note that a SIGCHLD may be caused by many child processes, so use loop to wait for other child in same group.
  * Other children may in running When a child terminated(exit or by signal), so we should kill all children at once.
  * 
  * Handle status for SIGCHLD.
