@@ -15,25 +15,25 @@
 using namespace std;
 namespace po = boost::program_options;
 
-/**
- * [Usage]
- *      sudo ./profile
- *          --config                            Optional    file path, such as conf/example.json, default is empty
- *          --output                            Optional    file path, default is stdout
- *          --log                               Optional    file path, default is stderr
- *          --cpu                               Optional    such as 1,2~4, default is empty
- *          --plan                              Repeated    such as id or "{key:value[,key:value]}", at least one plan
- * [Supported Key]
- *          id                                  Required    such as "myplan"
-*           task                                Required    such as "./task"
- *          type                                Required    choose "DAEMON" or "COUNT" or "SAMPLE_ALL" or "SAMPLE_PHASE"
- *          rt                                  Optional    choose true or false, default is false
- *          pincpu                              Optional    choose true or false, default is false
- *          phase                               Optional    such as [start,end], default is [0,0]
- *          leader                              Optional    such as "INSTURCTIONS", default is empty
- *          period                              Optional    default is 0
- *          member                              Optional    such as [MEMBER1, MEMBER2], default is empty
- */
+static char* helpmsg = (char*)"\
+[Usage]\n\
+    sudo ./profile\n\
+        --config        Optional        file path, such as conf/example.json, default is empty\n\
+        --output        Optional        file path, default is stdout\n\
+        --log           Optional        file path, default is stderr\n\
+        --cpu           Optional        such as 1,2~4, default is empty\n\
+        --plan          Repeated        such as id or \"{key:value[,key:value]}\", at least one plan\n\
+    [Supported Key]\n\
+        id              Required        such as \"myplan\"\n\
+        task            Required        such as \"./task\"\n\
+        type            Required        choose \"DAEMON\" or \"COUNT\" or \"SAMPLE_ALL\" or \"SAMPLE_PHASE\"\n\
+        rt              Optional        choose true or false, default is false\n\
+        pincpu          Optional        choose true or false, default is false\n\
+        phase           Optional        such as [start,end], default is [0,0]\n\
+        leader          Optional        such as \"INSTURCTIONS\", default is empty\n\
+        period          Optional        default is 0\n\
+        member          Optional        such as [MEMBER1, MEMBER2], default is empty\
+";
 
 #define ERRCODE -1
 
@@ -60,11 +60,12 @@ public:
             po::notify(vm);
         } catch (...) {
             ERR << "unrecognized option exits." << endl;
+            cout << helpmsg << endl;
             exit(ERRCODE);
         }
 
         if (vm.count("help")) {
-            cout << desc << endl;
+            cout << helpmsg << endl;
             exit(0);
         } else {
             if (!cpu.empty()) {
@@ -87,13 +88,12 @@ public:
                             end = boost::lexical_cast<int>(cpuset.substr(pos+1));
 
                             // Add 2, 3, 4 to m_cpu.
-                            for (int i=begin; i<=end; ++i) {
-                                cpuno.insert(i);
-                            }
+                            for (int i=begin; i<=end; ++i) { cpuno.insert(i); }
                         }
                     }
                 } catch (...) {
                     ERR << "invalid argument [--cpu=" << cpu << "]." << endl;
+                    cout << helpmsg << endl;
                     exit(ERRCODE);
                 }
 
@@ -103,6 +103,7 @@ public:
 
             if (m_plan.empty()) {
                 ERR << "invalid plan num[" << m_plan.size() << "], provide one plan at least" << "." << endl;
+                cout << helpmsg << endl;
                 exit(ERRCODE);
             }
         }
