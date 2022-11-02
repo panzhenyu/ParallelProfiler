@@ -16,23 +16,23 @@ using namespace std;
 namespace po = boost::program_options;
 
 static char* helpmsg = (char*)"\
-[Usage]\n\
-    sudo ./profile\n\
-        --config        Optional        file path, such as conf/example.json, default is empty\n\
-        --output        Optional        file path, default is stdout\n\
-        --log           Optional        file path, default is stderr\n\
-        --cpu           Optional        such as 1,2~4, default is empty\n\
-        --plan          Repeated        such as id or \"{key:value[,key:value]}\", at least one plan\n\
-    [Supported Key]\n\
-        id              Required        such as \"myplan\"\n\
-        task            Required        such as \"./task\"\n\
-        type            Required        choose \"DAEMON\" or \"COUNT\" or \"SAMPLE_ALL\" or \"SAMPLE_PHASE\"\n\
-        rt              Optional        choose true or false, default is false\n\
-        pincpu          Optional        choose true or false, default is false\n\
-        phase           Optional        such as [start,end], default is [0,0]\n\
-        leader          Optional        such as \"INSTURCTIONS\", default is empty\n\
-        period          Optional        default is 0\n\
-        member          Optional        such as [MEMBER1, MEMBER2], default is empty\
+[Usage]                                                                                                         \n\
+    sudo ./profile                                                                                              \n\
+        --config        Optional        file path, such as conf/example.json, default is empty                  \n\
+        --output        Optional        file path, default is stdout                                            \n\
+        --log           Optional        file path, default is stderr                                            \n\
+        --cpu           Optional        such as 1,2~4, default is empty                                         \n\
+        --plan          Repeated        such as id or \"{key:value[,key:value]}\", at least one plan            \n\
+[Supported Key]                                                                                                 \n\
+        id              Required        such as \"myplan\"                                                      \n\
+        task            Required        such as \"./task\"                                                      \n\
+        type            Required        choose \"DAEMON\" or \"COUNT\" or \"SAMPLE_ALL\" or \"SAMPLE_PHASE\"    \n\
+        rt              Optional        choose true or false, default is false                                  \n\
+        pincpu          Optional        choose true or false, default is false                                  \n\
+        phase           Optional        such as [start,end], default is [0,0]                                   \n\
+        leader          Optional        such as \"INSTURCTIONS\", default is empty                              \n\
+        period          Optional        default is 0                                                            \n\
+        member          Optional        such as [MEMBER1, MEMBER2], default is empty                            \
 ";
 
 #define ERRCODE -1
