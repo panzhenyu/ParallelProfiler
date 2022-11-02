@@ -21,7 +21,6 @@ pid_t
 Process::start(const std::function<int()>& setup, const std::vector<std::string>& args) {
     int err;
     pid_t pid;
-    std::vector<char*> argv;
 
     if (0 == args.size()) {
         return false;
@@ -30,22 +29,32 @@ Process::start(const std::function<int()>& setup, const std::vector<std::string>
     pid = fork();
 
     if (0 == pid) {
-        // prepare args
-        for (auto& arg : args) {
-            argv.push_back(const_cast<char*>(arg.c_str()));
-        }
-        argv.push_back(0);
         // setup for this child process
         if (0 != (err=setup())) {
             exit(err);
         }
+
         // do exec
-        if (-1 == execve(args[0].c_str(), argv.data(), {0})) {
+        if (!Process::exec(args)) {
             exit(-errno);
         }
     }
     
     return pid;
+}
+
+bool
+Process::exec(const std::vector<std::string>& args) {
+    std::vector<char*> argv;
+
+    // prepare args
+    for (auto& arg : args) {
+        argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    argv.push_back(0);
+
+    // do exec
+    return -1 != execve(args[0].c_str(), argv.data(), {0});
 }
 
 bool
