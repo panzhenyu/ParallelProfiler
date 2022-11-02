@@ -35,7 +35,10 @@ ParallelProfiler::setupSyncTask(const Task& task) {
         return -errno;
     }
 
-    // Enable OVERFLOW_SIG, cause father may block signal before fork this child.
+    // Enable blocked signal.
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGCHLD);
     sigaddset(&mask, ParallelProfiler::OVERFLOW_SIG);
     if (-1 == sigprocmask(SIG_UNBLOCK, &mask, NULL)) {
         return -errno;
@@ -56,7 +59,7 @@ ParallelProfiler::createSignalFD() {
     if (-1 != sigprocmask(SIG_BLOCK, &mask, NULL)) {
         // We do not handle OVERFLOW_SIG, just ignore it.
         sigdelset(&mask, ParallelProfiler::OVERFLOW_SIG);
-        return signalfd(-1, &mask, 0);
+        return signalfd(-1, &mask, SFD_CLOEXEC);
     }
 
     return -1;
