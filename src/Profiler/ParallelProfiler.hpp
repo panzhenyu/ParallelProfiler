@@ -6,8 +6,6 @@
 
 class ParallelProfiler: public PerfProfiler {
 public:
-    static constexpr int OVERFLOW_SIG = 64;
-public:
     /**
      * Profile status
      * READY: All child processes have created correctly, the profiler should wait SIGTRAP to start all children.
@@ -18,6 +16,18 @@ public:
      */
     enum ProfileStatus { READY, INIT, PROFILE, DONE, ABORT, NR };
 
+public:
+    static constexpr int OVERFLOW_SIG = 64;
+    static constexpr char* profStatus2String[ParallelProfiler::NR+1] = {
+        (char*)"READY",
+        (char*)"INIT",
+        (char*)"PROFILE",
+        (char*)"DONE",
+        (char*)"ABORT",
+        (char*)"NR"
+    };
+
+public:
     struct RunningConfig {
         enum Status { RUN, STOP, DEAD };
         RunningConfig(const Plan&);
@@ -32,7 +42,7 @@ public:
     };
     using pidmap_t  = std::unordered_map<pid_t, RunningConfig>;
     using procset_t = std::unordered_set<pid_t>;
-    using result_t  = std::unordered_map<std::string, sample_t>;
+    using result_t  = std::map<std::string, uint64_t>;
 
 private:
     /**
@@ -57,7 +67,7 @@ private:
     static int createSignalFD();
 
 public:
-    ParallelProfiler(std::ostream& log, std::ostream& output);
+    ParallelProfiler(std::ostream& log);
     ParallelProfiler(const ParallelProfiler&) = delete;
     ~ParallelProfiler() = default;
 
@@ -71,10 +81,16 @@ public:
     void setStatus(ProfileStatus status);
 
     //------------------------------------------------------------------------//
+    // Info reporter
+
+    std::string showCPUSet() const;
+    std::string showPlan() const;
+
+    //------------------------------------------------------------------------//
     // Getter
 
     ProfileStatus getStatus() const;
-    const result_t& getLastResult() const;
+    const std::map<std::string, ParallelProfiler::result_t>& getLastResult() const;
 
     //------------------------------------------------------------------------//
     // Controller
@@ -144,35 +160,39 @@ protected:
     /**
      * @brief A set of cpuno can be used by child if a plan need to pin cpu.
      */
-    std::vector<int>            m_cpuset;
+    std::vector<int>                m_cpuset;
 
     /**
      * @brief A set of plan for parallel profile.
      */
-    std::vector<Plan>           m_plan;
+    std::vector<Plan>               m_plan;
 
     //------------------------------------------------------------------------//
     // Running config
 
     /**
-     * @brief Map for running config, pid_t -> RunningConfig, each RunningConfig profile an process.
+     * @brief Map for running config, pid_t -> RunningConfig, each RunningConfig profiles a process.
      */
-    pidmap_t                    m_pidmap;
+    pidmap_t                        m_pidmap;
 
     /**
      * @brief Describe a profile stage.
      */
-    ProfileStatus               m_status;
+    ProfileStatus                   m_status;
 
     /**
      * @brief Describe profiling status of each process. When m_pstatus[prof].count(pid) means pid has reached prof status.
      */
-    std::array<procset_t, NR>   m_pstatus;
+    std::array<procset_t, NR>       m_pstatus;
 
     /**
-     * @brief Store result.
+     * @brief Store result for each plan.
+     * 
+     * Result format:
+     *      m_result = {planid: result_t[, planid: result_t]}
+     *      result_t = {event: count[, event: count]}
      */
-    result_t                    m_result;
+    std::map<std::string, result_t> m_result;
 
     //------------------------------------------------------------------------//
 };
@@ -206,13 +226,35 @@ ParallelProfiler::setStatus(ProfileStatus status) {
     m_status = status;
 }
 
+inline std::string
+ParallelProfiler::showCPUSet() const {
+    std::string out;
+    for (auto cpu : m_cpuset) {
+        out += std::to_string(cpu);
+        out += ",";
+    }
+    if (!out.empty()) { out.pop_back(); }
+    return out;
+}
+
+inline std::string
+ParallelProfiler::showPlan() const {
+    std::string out;
+    for (const auto& plan : m_plan) {
+        out += plan.getID();
+        out += ",";
+    }
+    if (!out.empty()) { out.pop_back(); }
+    return out;
+}
+
 inline ParallelProfiler::ProfileStatus
 ParallelProfiler::getStatus() const {
     return m_status;
 }
 
 
-inline const ParallelProfiler::result_t&
+inline const std::map<std::string, ParallelProfiler::result_t>&
 ParallelProfiler::getLastResult() const {
     return m_result;
 }

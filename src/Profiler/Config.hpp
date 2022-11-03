@@ -94,7 +94,7 @@ protected:
 
 protected:
     /**
-     * @brief Task object, descrip basic info for a task.
+     * @brief Task object, describe basic info for a task.
      */
     Task                            m_task;
 

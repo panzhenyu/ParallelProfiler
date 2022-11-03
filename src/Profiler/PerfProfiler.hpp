@@ -19,7 +19,7 @@ public:
     static void collectSample(Utils::Perf::Event* e, void* v, int status);
 
 public:
-    PerfProfiler(std::ostream& log, std::ostream& output);
+    PerfProfiler(std::ostream& log);
 
     /**
      * @brief Profile a task, not implement yet.
@@ -48,10 +48,5 @@ protected:
      * @brief Ostream object for log.
      */
     std::ostream&               m_log;
-
-    /**
-     * @brief Ostream object for output perf data.
-     */
-    std::ostream&               m_output;
 
 };

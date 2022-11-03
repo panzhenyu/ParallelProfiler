@@ -64,8 +64,8 @@ const std::vector<std::string>& events) {
 // PlanFactory
 
 Plan
-PlanFactory::defaultPlan(const std::string& id, Plan::Type type) {
-    return generalPlan(id, type, TaskAttributeFactory::defaultTaskAttribute(), 
+PlanFactory::defaultPlan() {
+    return generalPlan(std::string(), Plan::Type::DAEMON, TaskAttributeFactory::defaultTaskAttribute(), 
         PerfAttributeFactory::defaultPerfAttribute());
 }
 

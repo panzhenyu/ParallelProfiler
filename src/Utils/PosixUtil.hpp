@@ -12,6 +12,7 @@ class Process {
 public:
     static pid_t start(const std::function<int()>& func);
     static pid_t start(const std::function<int()>& setup, const std::vector<std::string>& args);
+    static bool exec(const std::vector<std::string>& args);
     static bool setCPUAffinity(pid_t pid, int cpu);
     static bool setFIFOProc(pid_t pid, int prio);
 };

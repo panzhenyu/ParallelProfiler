@@ -24,7 +24,7 @@ struct PerfAttributeFactory {
 };
 
 struct PlanFactory {
-    static Plan defaultPlan(const std::string& id, Plan::Type type);
+    static Plan defaultPlan();
     static Plan daemonPlan(const std::string& id, const TaskAttribute& task);
     static Plan generalPlan(const std::string& id, Plan::Type type, const TaskAttribute& task, const PerfAttribute& perf);
 };
