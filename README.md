@@ -117,7 +117,7 @@
 		```
 		${plan id}\t\tleader:${leader}[\t\tchild event:${child event}]
 		```
-		其中\$\{leader\}表示leader事件计数值，\$\{child event\}表示各成员事件计数值，方括号包裹的\$\{child event\}表示该项的长度由child event个数(member字段的长度)决定。
+		其中```${leader}```表示leader事件计数值，```${child event}```表示各成员事件计数值，方括号包裹的```${child event}```表示该项的长度由child event个数(member字段的长度)决定。
 
 	3. 以example-spec.json中的plan为例：
 		```
