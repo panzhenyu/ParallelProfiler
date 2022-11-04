@@ -115,9 +115,9 @@
 
 	2. 余下k行(假设plan id列表长度为k)，每一行格式如下：
 		```
-		${plan id}\t\tleader:${leader}[\t\tchild event:${child event}]
+		planid\t\tevent:${event}[\t\tevent:${event}]
 		```
-		其中```${leader}```表示leader事件计数值，```${child event}```表示各成员事件计数值，方括号包裹的```${child event}```表示该项的长度由child event个数(member字段的长度)决定。
+		其中```${event}```表示事件计数值，方括号包裹的```${event}```表示该项的长度为child event个数(member字段的长度) + 1(leader)。需要注意event的出现次序不保证与member中相同。
 
 	3. 以example-spec.json中的plan为例：
 		```
