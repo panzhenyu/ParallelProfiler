@@ -228,6 +228,11 @@ public: //--------------------------------------------------------------------//
     uint64_t GetSampleType() const;
 
     /**
+     * @brief Get the branch sample type.
+     */
+    uint64_t GetBranchSampleType() const;
+
+    /**
      * @brief Get the read format.
      */
     uint64_t GetReadFormat() const;
@@ -251,6 +256,11 @@ public: //--------------------------------------------------------------------//
      * @brief Set the sample type.
      */
     void SetSampleType(uint64_t sample_type);
+
+    /**
+     * @brief Set the branch sample type.
+     */
+    void SetBranchSampleType(uint64_t branch_sample_type);
 
     /**
      * @brief Set pid to monitor.
@@ -715,6 +725,11 @@ Event::GetSampleType() const {
 }
 
 inline uint64_t
+Event::GetBranchSampleType() const {
+    return attr.branch_sample_type;
+}
+
+inline uint64_t
 Event::GetReadFormat() const {
     return attr.read_format;
 }
@@ -755,6 +770,11 @@ Event::SetSampleType(uint64_t sample_type) {
 }
 
 inline void
+Event::SetBranchSampleType(uint64_t branch_sample_type) {
+    attr.branch_sample_type = branch_sample_type;
+}
+
+inline void
 Event::SetPreciseIp(int precise_ip = 0)
 {
     attr.precise_ip = precise_ip;
@@ -771,24 +791,36 @@ inline void
 Event::SetExcludeUser(bool exclude)
 {
     attr.exclude_user = exclude;
+    for (auto& child : child_events) {
+        child->attr.exclude_user = exclude;
+    }
 }
 
 inline void
 Event::SetExcludeKernel(bool exclude)
 {
     attr.exclude_kernel = exclude;
+    for (auto& child : child_events) {
+        child->attr.exclude_kernel = exclude;
+    }
 }
 
 inline void
 Event::SetExcludeHyperVisor(bool exclude)
 {
     attr.exclude_hv = exclude;
+    for (auto& child : child_events) {
+        child->attr.exclude_kernel = exclude;
+    }
 }
 
 inline void
 Event::SetExcludeIdle(bool exclude)
 {
     attr.exclude_idle = exclude;
+    for (auto& child : child_events) {
+        child->attr.exclude_idle = exclude;
+    }
 }
 
 inline void
