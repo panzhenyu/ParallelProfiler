@@ -8,6 +8,7 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include "Config.hpp"
+#include "ResultParser.hpp"
 #include "ConfigParser.hpp"
 #include "ConfigFactory.hpp"
 #include "ParallelProfiler.hpp"
@@ -22,7 +23,8 @@ static char* helpmsg = (char*)"\
         --output        Optional        file path, default is stdout                                            \n\
         --log           Optional        file path, default is stderr                                            \n\
         --cpu           Optional        such as 1,2~4, default is empty                                         \n\
-        --plan          Repeated        such as id or \"{key:value[,key:value]}\", at least one plan            \n\
+        --plan          Repeated        plan id, at least one plan                                              \n\
+        --json-plan     Repeated        such \"{key:value[,key:value]}\", at least one plan                     \n\
 [Supported Key]                                                                                                 \n\
         id              Required        such as \"myplan\"                                                      \n\
         task            Required        such as \"./task\"                                                      \n\
@@ -42,6 +44,33 @@ static char* helpmsg = (char*)"\
 
 struct ProfilerArguments {
 public:
+    void parseCPU(string& cpu) {
+        int pos, begin, end;
+        unordered_set<int> cpuno;
+        vector<string> cpusetSplit;
+
+        if (cpu.empty()) { return; }
+
+        // Case: --cpu=1,2~4
+        boost::split(cpusetSplit, cpu, boost::is_any_of(","), boost::token_compress_on);
+        for (auto& cpuset : cpusetSplit) {
+            if (string::npos == (pos=cpuset.find("~"))) {
+                // Pattern: 1
+                cpuno.insert(boost::lexical_cast<int>(cpuset));
+            } else {
+                // Pattern: 2~4
+                begin = boost::lexical_cast<int>(cpuset.substr(0, pos));
+                end = boost::lexical_cast<int>(cpuset.substr(pos+1));
+
+                // Add 2, 3, 4 to m_cpu.
+                for (int i=begin; i<=end; ++i) { cpuno.insert(i); }
+            }
+        }
+
+        m_cpu.insert(m_cpu.end(), cpuno.begin(), cpuno.end());
+        sort(m_cpu.begin(), m_cpu.end());
+    }
+
     void parse(int argc, char* argv[]) {
         po::options_description desc("profile [--options]");
         po::variables_map vm;
@@ -53,6 +82,7 @@ public:
             ("log", po::value<string>(&m_log)->default_value(string()), "log file")
             ("cpu", po::value<string>(&cpu)->default_value(string()), "cpuset used for plan, such as 1,2~4")
             ("plan", po::value<vector<string>>(&m_plan)->multitoken(), "plan to profile, must provide one plan at least")
+            ("json-plan", po::value<vector<string>>(&m_jsonPlan)->multitoken(), "plan in json format")
             ("help", "show this message");
 
         try {
@@ -68,41 +98,16 @@ public:
             cout << helpmsg << endl;
             exit(0);
         } else {
-            if (!cpu.empty()) {
-                int pos, begin, end;
-                unordered_set<int> cpuno;
-                vector<string> cpusetSplit;
-
-                // Case: --cpu=1,2~4
-                boost::split(cpusetSplit, cpu, boost::is_any_of(","), boost::token_compress_on);
-
-                // Handle each cpuset.
-                try {
-                    for (auto& cpuset : cpusetSplit) {
-                        if (string::npos == (pos=cpuset.find("~"))) {
-                            // Pattern: 1
-                            cpuno.insert(boost::lexical_cast<int>(cpuset));
-                        } else {
-                            // Pattern: 2~4
-                            begin = boost::lexical_cast<int>(cpuset.substr(0, pos));
-                            end = boost::lexical_cast<int>(cpuset.substr(pos+1));
-
-                            // Add 2, 3, 4 to m_cpu.
-                            for (int i=begin; i<=end; ++i) { cpuno.insert(i); }
-                        }
-                    }
-                } catch (...) {
-                    ERR << "invalid argument [--cpu=" << cpu << "]." << endl;
-                    cout << helpmsg << endl;
-                    exit(ERRCODE);
-                }
-
-                m_cpu.insert(m_cpu.end(), cpuno.begin(), cpuno.end());
-                sort(m_cpu.begin(), m_cpu.end());
+            try {
+                parseCPU(cpu);
+            } catch (...) {
+                ERR << "invalid argument [--cpu=" << cpu << "]." << endl;
+                cout << helpmsg << endl;
+                exit(ERRCODE);
             }
 
-            if (m_plan.empty()) {
-                ERR << "invalid plan num[" << m_plan.size() << "], provide one plan at least" << "." << endl;
+            if (m_plan.empty() && m_jsonPlan.empty()) {
+                ERR << "provide one plan at least" << "." << endl;
                 cout << helpmsg << endl;
                 exit(ERRCODE);
             }
@@ -115,26 +120,15 @@ public:
     string              m_log;
     vector<int>         m_cpu;
     vector<string>      m_plan;
+    vector<string>      m_jsonPlan;
 };
 
 int main(int argc, char *argv[]) {
     ProfilerArguments args;
-    ofstream outfile, logfile;
-    ostream *output, *log;
+    ofstream logfile;
+    ostream *log;
 
     args.parse(argc, argv);
-
-    // Get output stream.
-    if (!args.m_output.empty()) {
-        outfile = ofstream(args.m_output.c_str(), std::ofstream::app);
-        if (!outfile.is_open()) {
-            ERR << "failed to open output[" << args.m_output.c_str() << "]." << endl;
-            exit(ERRCODE);
-        }
-        output = &outfile;
-    } else {
-        output = &cout;
-    }
 
     // Get log stream.
     if (!args.m_log.empty()) {
@@ -151,83 +145,90 @@ int main(int argc, char *argv[]) {
     // CPU set has already been parsed.
     // Build profiler.
     ParallelProfiler profiler(*log);
+
+    // Add cpu set.
     profiler.setCPUSet(args.m_cpu);
 
     // Parse config(if exists) and add plan.
     {
         ConfigParser parser;
-        unordered_set<string> plans;
-        Plan plan = PlanFactory::defaultPlan();
-        if (!args.m_config.empty() && ConfigParser::PARSE_OK != parser.parseFile(args.m_config)) {
-            ERR << "failed to parse config[" << args.m_config << "]." << endl;
+        unordered_set<string> exist;
+        ConfigParser::ParseError error;
+
+        // Parse config file.
+        if (!args.m_config.empty() && ConfigParser::PARSE_OK != (error=parser.parseFile(args.m_config))) {
+            ERR << "failed to parse config[" << args.m_config << "] with errcode[" << error << "]." << endl;
             exit(ERRCODE);
         }
-        for (const string& planStr : args.m_plan) {
-            if (!planStr.empty() && planStr[0] == '{') {
-                // Parse json plan.
-                auto [_plan, error] = parser.parseJsonPlan(planStr);
-                if (ConfigParser::PARSE_OK != error) {
-                    ERR << "failed to add plan[" << planStr << "]." << endl;
-                    exit(ERRCODE);
-                } else if (!_plan.valid()) {
-                    ERR << "invalid plan[" << planStr << "]." << endl;
-                    exit(ERRCODE);
-                }
-                plan = _plan;
-            } else {
-                // Parse normal plan with plan id.
-                auto itr = parser.getPlan(planStr);
-                if (itr == parser.planEnd()) {
-                    ERR << "failed to add plan[" << planStr << "]." << endl;
-                    exit(ERRCODE);
-                }
-                plan = itr->second;
-            }
 
-            // Add plan.
-            string planID = plan.getID();
-            if (plans.count(planID)) {
-                ERR << "conflict plan[" << planID << "] when parse argument[" << planStr << "]." << endl;
+        // Parse plan id.
+        for (const string& planid : args.m_plan) {
+            auto itr = parser.getPlan(planid);
+            if (itr == parser.planEnd()) {
+                ERR << "failed to add plan[" << planid << "]." << endl;
                 exit(ERRCODE);
             }
-            plans.insert(planID);
-            profiler.addPlan(plan);
+            if (!exist.count(planid)) {
+                profiler.addPlan(itr->second);
+                exist.insert(planid);
+            } else {
+                ERR << "conflict plan[" << planid << "] when parse argument[" << planid << "]." << endl;
+                exit(ERRCODE);
+            }
+        }
+
+        // Parse json plan.
+        for (const string& jsonPlan : args.m_jsonPlan) {
+            auto [plan, error] = parser.parseJsonPlan(jsonPlan);
+            if (ConfigParser::PARSE_OK != error) {
+                ERR << "failed to add plan[" << jsonPlan << "]." << endl;
+                exit(ERRCODE);
+            } else if (!plan.valid()) {
+                ERR << "invalid plan[" << jsonPlan << "]." << endl;
+                exit(ERRCODE);
+            }
+            if (!exist.count(plan.getID())) {
+                profiler.addPlan(plan);
+                exist.insert(plan.getID());
+            } else {
+                ERR << "conflict plan[" << plan.getID() << "] when parse argument[" << plan.getID() << "]." << endl;
+                exit(ERRCODE);
+            }
         }
     }
 
-    // Log helper info before profile.
-    {
-        INFO << "Start parallel profiling with setting:" << endl;
-        INFO << "[Config] " << args.m_config << endl;
-        INFO << "[Output] " << (args.m_output.empty() ? "stdout" : args.m_output) << endl;
-        INFO << "[Log] " << (args.m_log.empty() ? "stderr" : args.m_log) << endl;
-        INFO << "[CPUSet] " << profiler.showCPUSet() << endl;
-        INFO << "[Plan] " << profiler.showPlan() << endl;
-    }
-    *log << "[" << profiler.showPlan() << "]" << endl;
-
     // Do profile.
+    *log << "[" << profiler.showPlan() << "]" << endl;
     int err = profiler.profile();
     INFO << "profile done with err[" << err << "]." << endl;
 
     // Do output.
-    {
-        if (!err && ParallelProfiler::DONE == profiler.getStatus()) {
-            const auto& result = profiler.getLastResult();
-            
-            *output << '[' << profiler.showPlan() << ']' << endl;
-            for (auto& [planid, sample] : result) {
-                *output << left << setw(15) << planid;
-                for (auto& [event, count] : sample) {
-                    *output << "\t\t" << event << ':' << count;
-                }
-                *output << endl;
+    if (!err && ParallelProfiler::DONE == profiler.getStatus()) {
+        ResultParser result;
+
+        if (args.m_output.empty()) {
+            // Output to cout.
+            result.append(profiler.getLastResult());
+            cout << result.json() << endl;
+        } else {
+            // Append to file.
+            result.parseFile(args.m_output);
+
+            ofstream outfile(args.m_output.c_str(), std::ofstream::out);
+            if (!outfile.is_open()) {
+                ERR << "failed to open output[" << args.m_output.c_str() << "]." << endl;
+                exit(ERRCODE);
             }
+            if (!result.append(profiler.getLastResult())) {
+                ERR << "failed to append result." << endl;
+                exit(ERRCODE);
+            }
+            outfile << result.json();
+            outfile.close();
         }
     }
 
-    // Flush output & log stream.
-    output->flush();
+    // Flush log stream.
     log->flush();
 
     return err;

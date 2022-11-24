@@ -425,7 +425,6 @@ int
 ParallelProfiler::profile() {
     bool ok;
     pid_t ret;
-    result_t sum;
     struct pollfd pfd[1];
     std::vector<int> oldcpuset;
     int status, sfd = 0, err = 0;
@@ -488,26 +487,13 @@ ParallelProfiler::profile() {
     // Profile done or abort as we get here.
     LOG(INFO) << "Profile done with status[" << getStatus() << "].";
     
-    // Merge all result here.
+    // Collect result for perf plan.
     for (auto& [pid, config] : m_pidmap) {
         const Plan& plan = config.m_plan;
-
-        // Collect sum for perf plan.
         if (plan.perfPlan()) {
-            const auto& planid = plan.getID();
-            const auto& leader = plan.getPerfAttribute().getLeader();
-            const auto& events = plan.getPerfAttribute().getEvents();
-
-            sum.clear();
-            for (auto& sample : config.m_samples) {
-                for (size_t i=0; i<sample.size(); ++i) {
-                    sum[i ? events[i-1] : leader] += sample[i];
-                }
-            }
-            m_result.emplace(planid, sum);
+            m_result.emplace_back(plan, std::move(config.m_samples));
         }
     }
-
 
 terminate:
     killAll();
