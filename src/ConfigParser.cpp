@@ -89,10 +89,6 @@ ConfigParser::parseJson(const string& json) {
         return CONF_INVALID_FORMAT;
     }
 
-    m_json = json;
-    m_taskMap.clear();
-    m_planMap.clear();
-
     // Parse Task if exist.
     if (doc.HasMember("Task")) {
         const auto& tasks = doc["Task"];

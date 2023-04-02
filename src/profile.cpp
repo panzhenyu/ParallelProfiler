@@ -19,7 +19,7 @@ namespace po = boost::program_options;
 static char* helpmsg = (char*)"\
 [Usage]                                                                                                         \n\
     sudo ./profile                                                                                              \n\
-        --config        Optional        file path, such as conf/example.json, default is empty                  \n\
+        --config        Repeated        file path, such as conf/example.json, default is empty                  \n\
         --output        Optional        file path, default is stdout                                            \n\
         --log           Optional        file path, default is stderr                                            \n\
         --cpu           Optional        such as 1,2~4, default is empty                                         \n\
@@ -77,7 +77,7 @@ public:
         string cpu;
 
         desc.add_options()
-            ("config", po::value<string>(&m_config)->default_value(string()), "config file")
+            ("config", po::value<vector<string>>(&m_config)->multitoken(), "config file")
             ("output", po::value<string>(&m_output)->default_value(string()), "output file")
             ("log", po::value<string>(&m_log)->default_value(string()), "log file")
             ("cpu", po::value<string>(&cpu)->default_value(string()), "cpuset used for plan, such as 1,2~4")
@@ -115,7 +115,7 @@ public:
     }
 
 public:
-    string              m_config;
+    vector<string>      m_config;
     string              m_output;
     string              m_log;
     vector<int>         m_cpu;
@@ -156,9 +156,11 @@ int main(int argc, char *argv[]) {
         ConfigParser::ParseError error;
 
         // Parse config file.
-        if (!args.m_config.empty() && ConfigParser::PARSE_OK != (error=parser.parseFile(args.m_config))) {
-            ERR << "failed to parse config[" << args.m_config << "] with errcode[" << error << "]." << endl;
-            exit(ERRCODE);
+        for (const auto& config : args.m_config) {
+            if (!config.empty() && ConfigParser::PARSE_OK != (error=parser.parseFile(config))) {
+                ERR << "failed to parse config[" << config << "] with errcode[" << error << "]." << endl;
+                exit(ERRCODE);
+            }
         }
 
         // Parse plan id.

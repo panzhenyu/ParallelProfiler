@@ -57,7 +57,6 @@ public:
     ParseError parseFile(const string& file);
     ParseError parseFile(ifstream& ifs);
 
-    const string& getJson() const;
     unordered_map<string, Task>::const_iterator taskBegin() const;
     unordered_map<string, Task>::const_iterator taskEnd() const;
     unordered_map<string, Task>::const_iterator getTask(const string& taskID) const;
@@ -72,7 +71,6 @@ private:
     pair<PerfAttribute, ParseError> parsePerfAttribute(const rapidjson::Value& val);
 
 private:
-    string                      m_json;
     unordered_map<string, Task> m_taskMap;
     unordered_map<string, Plan> m_planMap;
 };
@@ -80,10 +78,6 @@ private:
 //----------------------------------------------------------------------------//
 // ConfigParser
 
-inline const string&
-ConfigParser::getJson() const {
-    return m_json;
-}
 inline unordered_map<string, Task>::const_iterator
 ConfigParser::taskBegin() const {
     return m_taskMap.begin();
