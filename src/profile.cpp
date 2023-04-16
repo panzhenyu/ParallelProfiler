@@ -183,7 +183,7 @@ int main(int argc, char *argv[]) {
         for (const string& jsonPlan : args.m_jsonPlan) {
             auto [plan, error] = parser.parseJsonPlan(jsonPlan);
             if (ConfigParser::PARSE_OK != error) {
-                ERR << "failed to add plan[" << jsonPlan << "]." << endl;
+                ERR << "failed to add plan[" << jsonPlan << "] with error[" << error << "]." << endl;
                 exit(ERRCODE);
             } else if (!plan.valid()) {
                 ERR << "invalid plan[" << jsonPlan << "]." << endl;
