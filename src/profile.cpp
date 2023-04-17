@@ -130,6 +130,12 @@ int main(int argc, char *argv[]) {
 
     args.parse(argc, argv);
 
+    // Create a new group id, so that OVERFLOW signal won't be sent to other process.
+    if (setpgid(0, 0) == -1) {
+        ERR << "failed to setpgid" << endl;
+        exit(ERRCODE);
+    }
+
     // Get log stream.
     if (!args.m_log.empty()) {
         logfile = ofstream(args.m_log.c_str(), std::ofstream::app);
