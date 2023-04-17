@@ -101,13 +101,13 @@
 	```
 	sudo ./profile --config=../../conf/example-spec.json --output=output.txt --log=log.txt --cpu=1,2 --plan=456.hmmer --plan=403.gcc
 	
-	sudo ./profile --plan='{"id": "ls-daemon", "task": "/bin/ls", "type": "DAEMON"}'
+	sudo ./profile --json-plan='{"id": "ls-daemon", "task": "/bin/ls", "type": "DAEMON"}'
 
-	sudo ./profile --plan='{"id": "ls-count", "task": "/bin/ls", "type": "COUNT", "leader": "INSTRUCTIONS"}'
+	sudo ./profile --json-plan='{"id": "ls-count", "task": "/bin/ls", "type": "COUNT", "leader": "INSTRUCTIONS"}'
 
-	sudo ./profile --plan='{"id": "ls-sample", "task": "/bin/ls", "type": "SAMPLE_ALL", "leader": "INSTRUCTIONS", "period": 10000}'
+	sudo ./profile --json-plan='{"id": "ls-sample", "task": "/bin/ls", "type": "SAMPLE_ALL", "leader": "INSTRUCTIONS", "period": 10000}'
 	
-	sudo ./profile --plan='{"id": "ls-phase", "task": "/bin/ls", "type": "SAMPLE_PHASE", "leader": "INSTRUCTIONS", "period": 10000, "phase": [0, 5]}'
+	sudo ./profile --json-plan='{"id": "ls-phase", "task": "/bin/ls", "type": "SAMPLE_PHASE", "leader": "INSTRUCTIONS", "period": 10000, "phase": [0, 5]}'
 	```
 
 + 结果格式说明

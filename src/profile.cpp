@@ -1,3 +1,7 @@
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <sys/types.h>
 #include <vector>
 #include <string>
 #include <fstream>
@@ -123,121 +127,161 @@ public:
     vector<string>      m_jsonPlan;
 };
 
+pid_t child = 0;
+
+void sigintHandler(int signo) {
+    kill(child, SIGINT);
+}
+
 int main(int argc, char *argv[]) {
-    ProfilerArguments args;
-    ofstream logfile;
-    ostream *log;
-
-    args.parse(argc, argv);
-
-    // Create a new group id, so that OVERFLOW signal won't be sent to other process.
-    if (setpgid(0, 0) == -1) {
-        ERR << "failed to setpgid" << endl;
+    // Register SIGINT handler, deliver it to child process.
+    if (SIG_ERR == signal(SIGINT, sigintHandler)) {
+        ERR << "failed to set default handler for SIGINT" << endl;
         exit(ERRCODE);
     }
-
-    // Get log stream.
-    if (!args.m_log.empty()) {
-        logfile = ofstream(args.m_log.c_str(), std::ofstream::app);
-        if (!logfile.is_open()) {
-            ERR << "failed to open log[" << args.m_log.c_str() << "]." << endl;
+    child = fork();
+    if (child == -1) {
+        ERR << "failed to fork" << endl;
+        exit(ERRCODE);
+    } else if (child) {
+        // parent process.
+        int status;
+        if (child == waitpid(child, &status, 0)) {
+            if (WIFEXITED(status)) {
+                return WEXITSTATUS(status);
+            } else {
+                ERR << "child doesn't exit normally" << endl;
+                exit(ERRCODE);
+            }
+        } else {
+            ERR << "failed to wait child" << endl;
             exit(ERRCODE);
         }
-        log = &logfile;
     } else {
-        log = &cerr;
-    }
+        // child process.
+        ProfilerArguments args;
+        ofstream logfile;
+        ostream *log;
 
-    // CPU set has already been parsed.
-    // Build profiler.
-    ParallelProfiler profiler(*log);
-
-    // Add cpu set.
-    profiler.setCPUSet(args.m_cpu);
-
-    // Parse config(if exists) and add plan.
-    {
-        ConfigParser parser;
-        unordered_set<string> exist;
-        ConfigParser::ParseError error;
-
-        // Parse config file.
-        for (const auto& config : args.m_config) {
-            if (!config.empty() && ConfigParser::PARSE_OK != (error=parser.parseFile(config))) {
-                ERR << "failed to parse config[" << config << "] with errcode[" << error << "]." << endl;
-                exit(ERRCODE);
-            }
+        // Reset SIGINT handler for child.
+        if (SIG_ERR == signal(SIGINT, SIG_DFL)) {
+            ERR << "failed to set default handler for SIGINT" << endl;
+            exit(ERRCODE);
         }
 
-        // Parse plan id.
-        for (const string& planid : args.m_plan) {
-            auto itr = parser.getPlan(planid);
-            if (itr == parser.planEnd()) {
-                ERR << "failed to add plan[" << planid << "]." << endl;
-                exit(ERRCODE);
-            }
-            if (!exist.count(planid)) {
-                profiler.addPlan(itr->second);
-                exist.insert(planid);
-            } else {
-                ERR << "conflict plan[" << planid << "] when parse argument[" << planid << "]." << endl;
-                exit(ERRCODE);
-            }
+        // Create a new group id, so that OVERFLOW signal won't be sent to other process.
+        if (setpgid(0, 0) == -1) {
+            ERR << "failed to setpgid" << endl;
+            exit(ERRCODE);
         }
 
-        // Parse json plan.
-        for (const string& jsonPlan : args.m_jsonPlan) {
-            auto [plan, error] = parser.parseJsonPlan(jsonPlan);
-            if (ConfigParser::PARSE_OK != error) {
-                ERR << "failed to add plan[" << jsonPlan << "] with error[" << error << "]." << endl;
-                exit(ERRCODE);
-            } else if (!plan.valid()) {
-                ERR << "invalid plan[" << jsonPlan << "]." << endl;
-                exit(ERRCODE);
-            }
-            if (!exist.count(plan.getID())) {
-                profiler.addPlan(plan);
-                exist.insert(plan.getID());
-            } else {
-                ERR << "conflict plan[" << plan.getID() << "] when parse argument[" << plan.getID() << "]." << endl;
+        args.parse(argc, argv);
+
+        // Get log stream.
+        if (!args.m_log.empty()) {
+            logfile = ofstream(args.m_log.c_str(), std::ofstream::app);
+            if (!logfile.is_open()) {
+                ERR << "failed to open log[" << args.m_log.c_str() << "]." << endl;
                 exit(ERRCODE);
             }
-        }
-    }
-
-    // Do profile.
-    *log << "[" << profiler.showPlan() << "]" << endl;
-    int err = profiler.profile();
-    INFO << "profile done with err[" << err << "]." << endl;
-
-    // Do output.
-    if (!err && ParallelProfiler::DONE == profiler.getStatus()) {
-        ResultParser result;
-
-        if (args.m_output.empty()) {
-            // Output to cout.
-            result.append(profiler.getLastResult());
-            cout << result.json() << endl;
+            log = &logfile;
         } else {
-            // Append to file.
-            result.parseFile(args.m_output);
-
-            ofstream outfile(args.m_output.c_str(), std::ofstream::out);
-            if (!outfile.is_open()) {
-                ERR << "failed to open output[" << args.m_output.c_str() << "]." << endl;
-                exit(ERRCODE);
-            }
-            if (!result.append(profiler.getLastResult())) {
-                ERR << "failed to append result." << endl;
-                exit(ERRCODE);
-            }
-            outfile << result.json();
-            outfile.close();
+            log = &cerr;
         }
+
+        // CPU set has already been parsed.
+        // Build profiler.
+        ParallelProfiler profiler(*log);
+
+        // Add cpu set.
+        profiler.setCPUSet(args.m_cpu);
+
+        // Parse config(if exists) and add plan.
+        {
+            ConfigParser parser;
+            unordered_set<string> exist;
+            ConfigParser::ParseError error;
+
+            // Parse config file.
+            for (const auto& config : args.m_config) {
+                if (!config.empty() && ConfigParser::PARSE_OK != (error=parser.parseFile(config))) {
+                    ERR << "failed to parse config[" << config << "] with errcode[" << error << "]." << endl;
+                    exit(ERRCODE);
+                }
+            }
+
+            // Parse plan id.
+            for (const string& planid : args.m_plan) {
+                auto itr = parser.getPlan(planid);
+                if (itr == parser.planEnd()) {
+                    ERR << "failed to add plan[" << planid << "]." << endl;
+                    exit(ERRCODE);
+                }
+                if (!exist.count(planid)) {
+                    profiler.addPlan(itr->second);
+                    exist.insert(planid);
+                } else {
+                    ERR << "conflict plan[" << planid << "] when parse argument[" << planid << "]." << endl;
+                    exit(ERRCODE);
+                }
+            }
+
+            // Parse json plan.
+            for (const string& jsonPlan : args.m_jsonPlan) {
+                auto [plan, error] = parser.parseJsonPlan(jsonPlan);
+                if (ConfigParser::PARSE_OK != error) {
+                    ERR << "failed to add plan[" << jsonPlan << "] with error[" << error << "]." << endl;
+                    exit(ERRCODE);
+                } else if (!plan.valid()) {
+                    ERR << "invalid plan[" << jsonPlan << "]." << endl;
+                    exit(ERRCODE);
+                }
+                if (!exist.count(plan.getID())) {
+                    profiler.addPlan(plan);
+                    exist.insert(plan.getID());
+                } else {
+                    ERR << "conflict plan[" << plan.getID() << "] when parse argument[" << plan.getID() << "]." << endl;
+                    exit(ERRCODE);
+                }
+            }
+        }
+
+        // Do profile.
+        *log << "[" << profiler.showPlan() << "]" << endl;
+
+        int err = profiler.profile();    
+        
+        INFO << "profile done with err[" << err << "]." << endl;
+
+        // Do output.
+        if (!err && ParallelProfiler::DONE == profiler.getStatus()) {
+            ResultParser result;
+
+            if (args.m_output.empty()) {
+                // Output to cout.
+                result.append(profiler.getLastResult());
+                cout << result.json() << endl;
+            } else {
+                // Append to file.
+                result.parseFile(args.m_output);
+
+                ofstream outfile(args.m_output.c_str(), std::ofstream::out);
+                if (!outfile.is_open()) {
+                    ERR << "failed to open output[" << args.m_output.c_str() << "]." << endl;
+                    exit(ERRCODE);
+                }
+                if (!result.append(profiler.getLastResult())) {
+                    ERR << "failed to append result." << endl;
+                    exit(ERRCODE);
+                }
+                outfile << result.json();
+                outfile.close();
+            }
+        }
+
+        // Flush log stream.
+        log->flush();
+
+        return err;
     }
-
-    // Flush log stream.
-    log->flush();
-
-    return err;
 }
