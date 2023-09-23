@@ -829,11 +829,6 @@ Event::SetReadFormat(uint64_t read_format) {
 }
 
 inline void
-Event::SetReadFormat(uint64_t read_format) {
-    attr.read_format = read_format;
-}
-
-inline void
 Event::EnableSigIO()
 {
     enable_sigio = true;
