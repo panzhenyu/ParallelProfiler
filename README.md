@@ -32,7 +32,7 @@
 
 #### 使用说明
 
-+ 在${ROOT}/build/src目录下执行如下命令，显示使用说明。
++ 在```${ROOT}/build/src```目录下执行如下命令，显示使用说明。
 	```
 	./profile --help
 
@@ -57,7 +57,7 @@
 	其中，plan后跟参数可分为两类，一类为plan id，一类为左花括号打头的json字符串。当参数为plan id时，plan id需要对应配置文件中"Plan"列表下的某一个id，不允许出现重复的plan id；若为json串，则至少需要提供id、task、type字段，并根据type字段值对phase、leader、period字段做进一步约束要求(同配置文件说明的附加约束)。
 
 + 配置文件说明
-	1. 配置文件示例见${ROOT}/conf/example.json，它包含Task与Plan两个列表，基本结构如下：
+	1. 配置文件示例见```${ROOT}/conf/example.json```，它包含Task与Plan两个列表，基本结构如下：
 		```
 		{
 			"Task": [
@@ -93,7 +93,7 @@
 	3. Task列表存储任务的静态描述。每个列表项支持id(Task的唯一标识符)、dir(执行该任务时的当前路径)、cmd三个字段(执行该任务所需的命令)，其中id、cmd为必选字段，dir默认值为"."，为可选字段，三个字段的值均为字符串类型。
 	4. Plan列表存储任务的动态描述。每个列表项支持id(Plan的唯一标识符)、type(Plan类型)、task(任务运行时属性的描述)、perf(任务运行时的性能事件描述)。其中id、type、task:id(表示task字段下的id字段)为必选字段，perf为可选字段。
 	5. Plan将根据type字段值约束task与perf中的部分字段：DAEMON将忽略task:phase字段与perf字段；COUNT将忽略task:phase字段与perf:period字段，且perf:leader字段将被约束为必选字段；SAMPLE_ALL将忽略task:phase字段，且perf:leader、perf:period被约束为必选字段，其中perf:period必须为正整数；SAMPLE_PHASE约束task:phase、perf:leader、perf:period为必选字段，并要求task:phase的phase end > phase begin，perf:period为正整数。
-	6. Plan:task:id需与Task中的任意一项id匹配。本工具允许在Task:cmd字段中使用$NUM(NUM为正整数)占位符创建一个变参cmd，在实际执行时，每一个$NUM都会被Plan:task:param中的第NUM个(从1开始计数)参数替换。
+	6. Plan:task:id需与Task中的任意一项id匹配。本工具允许在Task:cmd字段中使用```$NUM```(NUM为正整数)占位符创建一个变参cmd，在实际执行时，每一个```$NUM```都会被Plan:task:param中的第NUM个(从1开始计数)参数替换。
 	7. Plan:task:rt的值为bool类型，用于指示是否将该plan创建为FIFO进程。
 	8. Plan:task:pincpu的值为bool类型，用于指示是否为该plan对应的进程设置cpu亲和度，仅支持将亲和度设置为单个cpu。
 
@@ -101,13 +101,13 @@
 	```
 	sudo ./profile --config=../../conf/example-spec.json --output=output.txt --log=log.txt --cpu=1,2 --plan=456.hmmer --plan=403.gcc
 	
-	sudo ./profile --plan='{"id": "ls-daemon", "task": "/bin/ls", "type": "DAEMON"}'
+	sudo ./profile --json-plan='{"id": "ls-daemon", "task": "/bin/ls", "type": "DAEMON"}'
 
-	sudo ./profile --plan='{"id": "ls-count", "task": "/bin/ls", "type": "COUNT", "leader": "INSTRUCTIONS"}'
+	sudo ./profile --json-plan='{"id": "ls-count", "task": "/bin/ls", "type": "COUNT", "leader": "INSTRUCTIONS"}'
 
-	sudo ./profile --plan='{"id": "ls-sample", "task": "/bin/ls", "type": "SAMPLE_ALL", "leader": "INSTRUCTIONS", "period": 10000}'
+	sudo ./profile --json-plan='{"id": "ls-sample", "task": "/bin/ls", "type": "SAMPLE_ALL", "leader": "INSTRUCTIONS", "period": 10000}'
 	
-	sudo ./profile --plan='{"id": "ls-phase", "task": "/bin/ls", "type": "SAMPLE_PHASE", "leader": "INSTRUCTIONS", "period": 10000, "phase": [0, 5]}'
+	sudo ./profile --json-plan='{"id": "ls-phase", "task": "/bin/ls", "type": "SAMPLE_PHASE", "leader": "INSTRUCTIONS", "period": 10000, "phase": [0, 5]}'
 	```
 
 + 结果格式说明
@@ -115,9 +115,9 @@
 
 	2. 余下k行(假设plan id列表长度为k)，每一行格式如下：
 		```
-		${plan id}\t\tleader:${leader}[\t\tchild event:${child event}]
+		planid\t\tevent:${event}[\t\tevent:${event}]
 		```
-		其中```${leader}```表示leader事件计数值，```${child event}```表示各成员事件计数值，方括号包裹的```${child event}```表示该项的长度由child event个数(member字段的长度)决定。
+		其中```${event}```表示事件计数值，方括号包裹的```${event}```表示该项的长度为child event个数(member字段的长度) + 1(leader)。需要注意event的出现次序不保证与member中相同。
 
 	3. 以example-spec.json中的plan为例：
 		```

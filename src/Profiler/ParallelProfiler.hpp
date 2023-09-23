@@ -5,29 +5,7 @@
 #include "PerfProfiler.hpp"
 
 class ParallelProfiler: public PerfProfiler {
-public:
-    /**
-     * Profile status
-     * READY: All child processes have created correctly, the profiler should wait SIGTRAP to start all children.
-     * INIT: Some sample plan doesn't match its phase condition, the profiler should wait for thoes child.
-     * PROFILE: The profiler start profiling when all phase conditions are satisfied. We all use this stage to sync children.
-     * DONE: The profiler stop profiling and output when any child exit normally or meets its phase ending.
-     * ABORT: The profiler just stop profiling when any child abort(terminated by signal), do nothing with output.
-     */
-    enum ProfileStatus { READY, INIT, PROFILE, DONE, ABORT, NR };
-
-public:
-    static constexpr int OVERFLOW_SIG = 64;
-    static constexpr char* profStatus2String[ParallelProfiler::NR+1] = {
-        (char*)"READY",
-        (char*)"INIT",
-        (char*)"PROFILE",
-        (char*)"DONE",
-        (char*)"ABORT",
-        (char*)"NR"
-    };
-
-public:
+protected:
     struct RunningConfig {
         enum Status { RUN, STOP, DEAD };
         RunningConfig(const Plan&);
@@ -40,9 +18,31 @@ public:
         Status                  m_status;
         std::vector<sample_t>   m_samples;
     };
+
+public:
+    /**
+     * Profile status
+     * READY: All child processes have created correctly, the profiler should wait SIGTRAP to start all children.
+     * INIT: Some sample plan doesn't match its phase condition, the profiler should wait for thoes child.
+     * PROFILE: The profiler start profiling when all phase conditions are satisfied. We all use this stage to sync children.
+     * DONE: The profiler stop profiling and output when any child exit normally or meets its phase ending.
+     * ABORT: The profiler just stop profiling when any child abort(terminated by signal), do nothing with output.
+     */
+    enum ProfileStatus { READY, INIT, PROFILE, DONE, ABORT, NR };
+    static constexpr int OVERFLOW_SIG = 64;
+    static constexpr char* profStatus2String[ParallelProfiler::NR+1] = {
+        (char*)"READY",
+        (char*)"INIT",
+        (char*)"PROFILE",
+        (char*)"DONE",
+        (char*)"ABORT",
+        (char*)"NR"
+    };
+
+public:
     using pidmap_t  = std::unordered_map<pid_t, RunningConfig>;
     using procset_t = std::unordered_set<pid_t>;
-    using result_t  = std::map<std::string, uint64_t>;
+    using result_t  = std::vector<std::pair<Plan, std::vector<sample_t>>>;
 
 private:
     /**
@@ -90,7 +90,7 @@ public:
     // Getter
 
     ProfileStatus getStatus() const;
-    const std::map<std::string, ParallelProfiler::result_t>& getLastResult() const;
+    const result_t& getLastResult() const;
 
     //------------------------------------------------------------------------//
     // Controller
@@ -187,12 +187,8 @@ protected:
 
     /**
      * @brief Store result for each plan.
-     * 
-     * Result format:
-     *      m_result = {planid: result_t[, planid: result_t]}
-     *      result_t = {event: count[, event: count]}
      */
-    std::map<std::string, result_t> m_result;
+    result_t                        m_result;
 
     //------------------------------------------------------------------------//
 };
@@ -254,7 +250,7 @@ ParallelProfiler::getStatus() const {
 }
 
 
-inline const std::map<std::string, ParallelProfiler::result_t>&
+inline const ParallelProfiler::result_t&
 ParallelProfiler::getLastResult() const {
     return m_result;
 }

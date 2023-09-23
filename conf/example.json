@@ -73,7 +73,7 @@
             "type": "COUNT",
             "task": {
                 "id": "SetScanner",
-                "param": [0],
+                "param": ["0"],
                 "rt": true,
                 "pincpu": true
             },
@@ -87,7 +87,7 @@
             "type": "COUNT",
             "task": {
                 "id": "SetScanner",
-                "param": [1024],
+                "param": ["1024"],
                 "rt": true,
                 "pincpu": true
             },

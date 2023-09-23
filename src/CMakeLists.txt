@@ -2,6 +2,7 @@
 set(SRCS
 profile.cpp
 ConfigParser.cpp
+ResultParser.cpp
 )
 
 # add include path

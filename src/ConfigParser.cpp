@@ -18,14 +18,14 @@ ConfigParser::parseJsonPlan(const string& json) {
     Plan plan = PlanFactory::defaultPlan();
 
     if (doc.Parse(json.c_str()).HasParseError() || !doc.IsObject()) {
-        return {plan, CONF_FORMAT_ERROR};
+        return {plan, CONF_PARSE_ERROR};
     }
 
     // Parse required field.
     if (!doc.HasMember("id") || !doc.HasMember("task") || !doc.HasMember("type") ||
         !doc["id"].IsString() || !doc["task"].IsString() || !doc["type"].IsString() ||
         !planType.count(doc["type"].GetString())) {
-        return {plan, CONF_FORMAT_ERROR};
+        return {plan, CONF_PARSE_ERROR};
     }
     task = TaskFactory::buildTask("diy", doc["task"].GetString());
     plan.setID(doc["id"].GetString()).setType(planType.at(doc["type"].GetString()));
@@ -39,7 +39,7 @@ ConfigParser::parseJsonPlan(const string& json) {
         if (doc.HasMember("rt")) {
             const auto& rt = doc["rt"];
             if (!rt.IsBool()) {
-                return {plan, CONF_FORMAT_ERROR};
+                return {plan, TASKATTR_INVALID_RT};
             }
             taskAttr.setRT(rt.GetBool());
         }
@@ -48,7 +48,7 @@ ConfigParser::parseJsonPlan(const string& json) {
         if (doc.HasMember("pincpu")) {
             const auto& pincpu = doc["pincpu"];
             if (!pincpu.IsBool()) {
-                return {plan, CONF_FORMAT_ERROR};
+                return {plan, TASKATTR_INVALID_PINCPU};
             }
             taskAttr.setPinCPU(pincpu.GetBool());
         }
@@ -57,7 +57,7 @@ ConfigParser::parseJsonPlan(const string& json) {
         if (doc.HasMember("phase")) {
             const auto& phase = doc["phase"];
             if (!phase.IsArray() || 2 != phase.Size() || !phase[0].IsUint64() || !phase[1].IsUint64()) {
-                return {plan, CONF_FORMAT_ERROR};
+                return {plan, TASKATTR_INVALID_PHASE};
             }
             taskAttr.setPhaseBegin(phase[0].GetUint64());
             taskAttr.setPhaseEnd(phase[1].GetUint64());
@@ -69,7 +69,7 @@ ConfigParser::parseJsonPlan(const string& json) {
     {
         auto [perfAttr, error] = parsePerfAttribute(doc);
         if (error != PARSE_OK) {
-            return {plan, CONF_FORMAT_ERROR};
+            return {plan, error};
         }
         plan.setPerfAttribute(perfAttr);
     }
@@ -82,28 +82,24 @@ ConfigParser::parseJson(const string& json) {
     rapidjson::Document doc;
 
     if (doc.Parse(json.c_str()).HasParseError()) {
-        return CONF_FORMAT_ERROR;
+        return CONF_PARSE_ERROR;
     }
 
     if (!doc.IsObject()) {
-        return CONF_FORMAT_ERROR;
+        return CONF_INVALID_FORMAT;
     }
-
-    m_json = json;
-    m_taskMap.clear();
-    m_planMap.clear();
 
     // Parse Task if exist.
     if (doc.HasMember("Task")) {
         const auto& tasks = doc["Task"];
         if (!tasks.IsArray()) {
-            return TASK_FORMAT_ERROR;
+            return TASK_INVALID_FORMAT;
         }
 
         for (auto cur=tasks.Begin(); cur<tasks.End(); ++cur) {
             auto [task, err] = parseTask(*cur);
             if (PARSE_OK != err) {
-                cout << "[ERROR] parse task failed at index[" << cur-tasks.Begin() << "]." << endl;
+                cout << "[ERROR] parse task failed at index[" << cur-tasks.Begin() << "] with errcode[" << err << "]." << endl;
                 return err;
             }
 
@@ -122,13 +118,13 @@ ConfigParser::parseJson(const string& json) {
     if (doc.HasMember("Plan")) {
         const auto& plans = doc["Plan"];
         if (!plans.IsArray()) {
-            return PLAN_FORMAT_ERROR;
+            return PLAN_INVALID_FORMAT;
         }
 
         for (auto cur=plans.Begin(); cur<plans.End(); ++cur) {
             auto [plan, err] = parsePlan(*cur);
             if (PARSE_OK != err) {
-                cout << "[ERROR] parse plan failed at index[" << cur-plans.Begin() << "]." << endl;
+                cout << "[ERROR] parse plan failed at index[" << cur-plans.Begin() << "] with errcode[" << err << "]." << endl;
                 return err;
             }
 
@@ -156,14 +152,14 @@ ConfigParser::parseTask(const rapidjson::Value& val) {
 
     // Parse each task.
     if (!val.IsObject() || !val.HasMember("id") || !val.HasMember("cmd")) {
-        return {task, TASK_FORMAT_ERROR};
+        return {task, TASK_LOST_MEMBER};
     }
 
     // Check id & cmd.
     const auto& id = val["id"];
     const auto& cmd = val["cmd"];
     if (!id.IsString() || !cmd.IsString()) {
-        return {task, TASK_FORMAT_ERROR};
+        return {task, TASK_INVALID_MEMBER};
     }
     task.setID(id.GetString());
     task.setCmd(cmd.GetString());
@@ -174,7 +170,7 @@ ConfigParser::parseTask(const rapidjson::Value& val) {
         if (dir.IsString()) {
             task.setDir(dir.GetString());
         } else {
-            return {task, TASK_FORMAT_ERROR};
+            return {task, TASK_INVALID_DIR};
         }
     } else { task.setDir("."); }
 
@@ -187,15 +183,14 @@ ConfigParser::parsePlan(const rapidjson::Value& val) {
 
     // Parse each plan.
     if (!val.IsObject() || !val.HasMember("id") || !val.HasMember("type")) {
-        return {plan, PLAN_FORMAT_ERROR};
+        return {plan, PLAN_LOST_MEMBER};
     }
 
     // Check id & type.
     const auto& id = val["id"];
     const auto& type = val["type"];
     if (!id.IsString() || !type.IsString() || !planType.count(type.GetString())) {
-        cout << "2" << endl;
-        return {plan, PLAN_FORMAT_ERROR};
+        return {plan, PLAN_INVALID_MEMBER};
     }
     plan.setID(id.GetString());
     plan.setType(planType[type.GetString()]);
@@ -226,17 +221,20 @@ ConfigParser::parseTaskAttribute(const rapidjson::Value& val) {
     TaskAttribute attr = TaskAttributeFactory::defaultTaskAttribute();
     vector<string> param;
 
-    if (!val.IsObject() || !val.HasMember("id")) {
-        return {attr, TASKATTR_FORMAT_ERROR};
+    if (!val.IsObject()) {
+        return {attr, TASKATTR_INVALID_FORMAT};
+    }
+    if (!val.HasMember("id")) {
+        return {attr, TASKATTR_INVALID_ID};
     }
 
     // Parse id.
     const auto& id = val["id"];
     if (!id.IsString()) {
-        return {attr, TASKATTR_FORMAT_ERROR};
+        return {attr, TASKATTR_INVALID_ID};
     }
     if (!m_taskMap.count(id.GetString())) {
-        return {attr, TASK_NOT_FOUND};
+        return {attr, TASKATTR_INVALID_TASK};
     }
     attr.setTask(m_taskMap.at(id.GetString()));
 
@@ -244,11 +242,11 @@ ConfigParser::parseTaskAttribute(const rapidjson::Value& val) {
     if (val.HasMember("param")) {
         const auto& paramVal = val["param"];
         if (!paramVal.IsArray()) {
-            return {attr, TASKATTR_FORMAT_ERROR};
+            return {attr, TASKATTR_INVALID_PARAM};
         }
         for (auto cur=paramVal.Begin(); cur<paramVal.End(); ++cur) {
             if (!cur->IsString()) {
-                return {attr, TASKATTR_FORMAT_ERROR};
+                return {attr, TASKATTR_INVALID_PARAMARG};
             }
             param.emplace_back(cur->GetString());
         }
@@ -259,7 +257,7 @@ ConfigParser::parseTaskAttribute(const rapidjson::Value& val) {
     if (val.HasMember("rt")) {
         const auto& rt = val["rt"];
         if (!rt.IsBool()) {
-            return {attr, TASKATTR_FORMAT_ERROR};
+            return {attr, TASKATTR_INVALID_RT};
         }
         attr.setRT(rt.GetBool());
     }
@@ -268,7 +266,7 @@ ConfigParser::parseTaskAttribute(const rapidjson::Value& val) {
     if (val.HasMember("pincpu")) {
         const auto& pincpu = val["pincpu"];
         if (!pincpu.IsBool()) {
-            return {attr, TASKATTR_FORMAT_ERROR};
+            return {attr, TASKATTR_INVALID_PINCPU};
         }
         attr.setPinCPU(pincpu.GetBool());
     }
@@ -277,7 +275,7 @@ ConfigParser::parseTaskAttribute(const rapidjson::Value& val) {
     if (val.HasMember("phase")) {
         const auto& phase = val["phase"];
         if (!phase.IsArray() || 2 != phase.Size() || !phase[0].IsUint64() || !phase[1].IsUint64()) {
-            return {attr, TASKATTR_FORMAT_ERROR};
+            return {attr, TASKATTR_INVALID_PHASE};
         }
         attr.setPhaseBegin(phase[0].GetUint64());
         attr.setPhaseEnd(phase[1].GetUint64());
@@ -292,14 +290,14 @@ ConfigParser::parsePerfAttribute(const rapidjson::Value& val) {
     vector<string> events;
     
     if (!val.IsObject()) {
-        return {attr, PERFATTR_FORMAT_ERROR};
+        return {attr, PERFATTR_INVALID_FORMAT};
     }
 
     // Parse leader if exists.
     if (val.HasMember("leader")) {
         const auto& leader = val["leader"];
         if (!leader.IsString()) {
-            return {attr, PERFATTR_FORMAT_ERROR};
+            return {attr, PERFATTR_INVALID_LEADER};
         }
         attr.setLeader(leader.GetString());
     }
@@ -308,7 +306,7 @@ ConfigParser::parsePerfAttribute(const rapidjson::Value& val) {
     if (val.HasMember("period")) {
         const auto& period = val["period"];
         if (!period.IsUint64()) {
-            return {attr, PERFATTR_FORMAT_ERROR};
+            return {attr, PERFATTR_INVALID_PERIOD};
         }
         attr.setPeriod(period.GetUint64());
     }
@@ -317,11 +315,11 @@ ConfigParser::parsePerfAttribute(const rapidjson::Value& val) {
     if (val.HasMember("member")) {
         const auto& member = val["member"];
         if (!member.IsArray()) {
-            return {attr, PERFATTR_FORMAT_ERROR};
+            return {attr, PERFATTR_INVALID_MEMBER};
         }
         for (auto cur=member.Begin(); cur<member.End(); ++cur) {
             if (!cur->IsString()) {
-                return {attr, PERFATTR_FORMAT_ERROR};
+                return {attr, PERFATTR_INVALID_EVENT};
             }
             events.emplace_back(cur->GetString());
         }

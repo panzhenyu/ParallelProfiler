@@ -21,31 +21,46 @@ void
 PerfProfiler::collectSample(Utils::Perf::Event* e, void* v, int status) {
     using sample_t = PerfProfiler::sample_t;
 
-    bool hasID;
     sample_t sample;
-    uint64_t readfmt, nr, i;
+    uint64_t sampleType, readfmt;
     std::vector<sample_t>* samples = static_cast<std::vector<sample_t>*>(v);
 
+    // Not a sample record.
     if (status) { return; }
+    // Null pointer.
     if (nullptr == e || nullptr == v) { return; }
 
+    sampleType = e->GetSampleType();
     readfmt = e->GetReadFormat();
-    nr = e->Read<uint64_t>();
 
-    // skip PERF_FORMAT_TOTAL_TIME_ENABLED
-    if (readfmt & PERF_FORMAT_TOTAL_TIME_ENABLED) { e->Read<uint64_t>(); }
+    // Process PERF_SAMPLE_READ field.
+    if (sampleType & PERF_SAMPLE_READ) {
+        uint64_t nr = e->Read<uint64_t>();
 
-    // skip PERF_FORMAT_TOTAL_TIME_RUNNING
-    if (readfmt & PERF_FORMAT_TOTAL_TIME_RUNNING) { e->Read<uint64_t>(); }
+        // skip PERF_FORMAT_TOTAL_TIME_ENABLED
+        if (readfmt & PERF_FORMAT_TOTAL_TIME_ENABLED) { e->Read<uint64_t>(); }
 
-    // collect child events
-    hasID = (PERF_FORMAT_ID & readfmt) == 1;
-    for (i=0; i<nr; ++i) {
-        sample.emplace_back(e->Read<uint64_t>());
-        // skip PERF_FORMAT_ID
-        if (hasID) { e->Read<uint64_t>(); }
+        // skip PERF_FORMAT_TOTAL_TIME_RUNNING
+        if (readfmt & PERF_FORMAT_TOTAL_TIME_RUNNING) { e->Read<uint64_t>(); }
+
+        // collect child events
+        for (uint64_t i=0; i<nr; ++i) {
+            sample.emplace_back(e->Read<uint64_t>());
+            // skip PERF_FORMAT_ID
+            if (PERF_FORMAT_ID & readfmt) { e->Read<uint64_t>(); }
+        }
     }
 
+    // Process PERF_SAMPLE_BRANCH_STACK field.
+    if (sampleType & PERF_SAMPLE_BRANCH_STACK) {
+        uint64_t bnr = e->Read<uint64_t>();
+        struct perf_branch_entry entry;
+        for (uint64_t i=0; i<bnr; ++i) {
+            entry = e->Read<perf_branch_entry>();
+        }
+    }
+
+    // Process done, append sample.
     samples->emplace_back(sample);
 }
 
@@ -58,10 +73,10 @@ PerfProfiler::collect(EventPtr event, std::vector<sample_t>& data) {
     if (0 == event->GetSamplePeriod()) { return false; }
 
     /**
-     * TODO: Now we haven't support other sample type(except PERF_SAMPLE_READ) yet.
-     * If sample type isn't PERF_SAMPLE_READ, we cannot process it.
+     * TODO: Now we haven't support all sample type yet.
+     * If sample type isn't PERF_SAMPLE_READ or PERF_SAMPLE_BRANCH_STACK, we cannot process it.
      */
-    if (PERF_SAMPLE_READ != event->GetSampleType()) { return false; }
+    if (0 != (~(PERF_SAMPLE_READ|PERF_SAMPLE_BRANCH_STACK) & event->GetSampleType())) { return false; }
 
     // The read format must enable PERF_FORMAT_GROUP.
     if (0 == (PERF_FORMAT_GROUP & event->GetReadFormat())) { return false; }
